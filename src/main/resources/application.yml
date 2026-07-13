@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: insurance-underwriting-agent-demo
+  ai:
+    mcp:
+      server:
+        name: underwriting-business-tools
+        version: 1.0.0
+        protocol: STREAMABLE
+        type: SYNC
+        instructions: 提供虚构财险业务查询和确定性核保规则校验工具
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+app:
+  agent:
+    model:
+      provider: ${LLM_PROVIDER:mock}
+      base-url: ${LLM_BASE_URL:http://localhost:11434}
+      api-key: ${LLM_API_KEY:demo-key}
+      model: ${LLM_MODEL:deterministic-underwriter-v1}
+      connect-timeout: ${LLM_CONNECT_TIMEOUT:2s}
+      read-timeout: ${LLM_READ_TIMEOUT:15s}
+      max-attempts: ${LLM_MAX_ATTEMPTS:3}
+      retry-backoff: ${LLM_RETRY_BACKOFF:100ms}
+      fallback-to-mock: ${LLM_FALLBACK_TO_MOCK:false}
+    rag:
+      embedding-dimensions: 256
+      chunk-size: 500
+      chunk-overlap: 80
+      top-k: 4
