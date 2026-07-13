@@ -28,6 +28,15 @@ public class InMemoryPromptTemplateRepository implements PromptTemplateRepositor
     }
 
     @Override
+    public List<PromptTemplateVersion> findAll() {
+        return templates.values().stream()
+                .flatMap(List::stream)
+                .sorted(Comparator.comparing(PromptTemplateVersion::code)
+                        .thenComparingInt(PromptTemplateVersion::version))
+                .toList();
+    }
+
+    @Override
     public Optional<PromptTemplateVersion> findByCodeAndVersion(String code, int version) {
         return findByCode(code).stream()
                 .filter(template -> template.version() == version)

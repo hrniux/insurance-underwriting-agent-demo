@@ -79,6 +79,10 @@ public class PromptTemplateService {
         return List.copyOf(repository.findByCode(code));
     }
 
+    public List<PromptTemplateVersion> listAll() {
+        return List.copyOf(repository.findAll());
+    }
+
     public String preview(String code, Map<String, ?> variables) {
         PromptTemplateVersion template = active(code);
         Map<String, ?> supplied = Map.copyOf(Objects.requireNonNull(variables, "variables must not be null"));

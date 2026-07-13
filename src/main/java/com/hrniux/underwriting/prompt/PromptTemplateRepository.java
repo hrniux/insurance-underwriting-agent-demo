@@ -9,6 +9,8 @@ public interface PromptTemplateRepository {
 
     List<PromptTemplateVersion> findByCode(String code);
 
+    List<PromptTemplateVersion> findAll();
+
     Optional<PromptTemplateVersion> findByCodeAndVersion(String code, int version);
 
     void replace(String code, List<PromptTemplateVersion> versions);

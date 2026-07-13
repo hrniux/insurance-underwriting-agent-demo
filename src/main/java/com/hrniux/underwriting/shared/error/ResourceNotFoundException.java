@@ -1,15 +1,8 @@
 package com.hrniux.underwriting.shared.error;
 
-public class ResourceNotFoundException extends RuntimeException {
-
-    private final String errorCode;
+public class ResourceNotFoundException extends DomainException {
 
     public ResourceNotFoundException(String errorCode, String resourceId) {
-        super("Resource not found: " + resourceId);
-        this.errorCode = errorCode;
-    }
-
-    public String errorCode() {
-        return errorCode;
+        super(errorCode, "Resource not found: " + resourceId);
     }
 }
