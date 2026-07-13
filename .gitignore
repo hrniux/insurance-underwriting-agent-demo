@@ -1,0 +1,7 @@
+.worktrees/
+target/
+.idea/
+*.iml
+.DS_Store
+*.log
+application-local.yml
