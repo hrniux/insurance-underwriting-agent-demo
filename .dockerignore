@@ -1,0 +1,8 @@
+.git
+.worktrees
+.idea
+target
+*.iml
+*.log
+.DS_Store
+application-local.yml
