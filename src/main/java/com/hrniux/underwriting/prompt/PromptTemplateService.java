@@ -1,0 +1,112 @@
+package com.hrniux.underwriting.prompt;
+
+import java.time.Clock;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.hrniux.underwriting.shared.error.PromptRenderException;
+import com.hrniux.underwriting.shared.error.ResourceNotFoundException;
+
+@Service
+public class PromptTemplateService {
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([a-zA-Z][a-zA-Z0-9_]*)}}" );
+
+    private final PromptTemplateRepository repository;
+    private final Clock clock;
+
+    @Autowired
+    public PromptTemplateService(PromptTemplateRepository repository) {
+        this(repository, Clock.systemUTC());
+    }
+
+    PromptTemplateService(PromptTemplateRepository repository, Clock clock) {
+        this.repository = Objects.requireNonNull(repository, "repository must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    public synchronized PromptTemplateVersion createVersion(
+            String code, String body, Set<String> requiredVariables) {
+        Set<String> declared = Set.copyOf(Objects.requireNonNull(
+                requiredVariables, "requiredVariables must not be null"));
+        Set<String> placeholders = placeholders(body);
+        if (!declared.equals(placeholders)) {
+            Set<String> undeclared = new LinkedHashSet<>(placeholders);
+            undeclared.removeAll(declared);
+            Set<String> unused = new LinkedHashSet<>(declared);
+            unused.removeAll(placeholders);
+            throw new PromptRenderException(
+                    "Prompt variables do not match; undeclared=" + undeclared + ", unused=" + unused);
+        }
+
+        List<PromptTemplateVersion> history = repository.findByCode(code);
+        int nextVersion = history.stream()
+                .mapToInt(PromptTemplateVersion::version)
+                .max()
+                .orElse(0) + 1;
+        PromptTemplateVersion template = new PromptTemplateVersion(
+                code, nextVersion, body, declared, history.isEmpty(), clock.instant());
+        return repository.save(template);
+    }
+
+    public synchronized PromptTemplateVersion activate(String code, int version) {
+        PromptTemplateVersion selected = repository.findByCodeAndVersion(code, version)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "PROMPT_VERSION_NOT_FOUND", code + ":" + version));
+        List<PromptTemplateVersion> updated = repository.findByCode(code).stream()
+                .map(template -> template.withActive(template.version() == version))
+                .toList();
+        repository.replace(code, updated);
+        return selected.withActive(true);
+    }
+
+    public PromptTemplateVersion active(String code) {
+        return repository.findByCode(code).stream()
+                .filter(PromptTemplateVersion::active)
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("PROMPT_NOT_FOUND", code));
+    }
+
+    public List<PromptTemplateVersion> versions(String code) {
+        return List.copyOf(repository.findByCode(code));
+    }
+
+    public String preview(String code, Map<String, ?> variables) {
+        PromptTemplateVersion template = active(code);
+        Map<String, ?> supplied = Map.copyOf(Objects.requireNonNull(variables, "variables must not be null"));
+        Set<String> missing = new LinkedHashSet<>(template.requiredVariables());
+        missing.removeAll(supplied.keySet());
+        if (!missing.isEmpty()) {
+            throw new PromptRenderException("Missing prompt variables: " + missing);
+        }
+
+        Matcher matcher = PLACEHOLDER.matcher(template.body());
+        StringBuilder rendered = new StringBuilder();
+        while (matcher.find()) {
+            String replacement = String.valueOf(supplied.get(matcher.group(1)));
+            matcher.appendReplacement(rendered, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(rendered);
+        return rendered.toString();
+    }
+
+    private Set<String> placeholders(String body) {
+        if (body == null || body.isBlank()) {
+            throw new IllegalArgumentException("body must not be blank");
+        }
+        Set<String> names = new LinkedHashSet<>();
+        Matcher matcher = PLACEHOLDER.matcher(body);
+        while (matcher.find()) {
+            names.add(matcher.group(1));
+        }
+        return Set.copyOf(names);
+    }
+}
