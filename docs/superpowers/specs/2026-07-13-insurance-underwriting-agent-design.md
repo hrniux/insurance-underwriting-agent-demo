@@ -40,7 +40,7 @@ Demo 覆盖以下闭环：
 | AI/MCP | Spring AI 2.0.0 | 提供 MCP Server、工具注解和 AI 相关抽象 |
 | 构建 | Maven | 单模块 Maven 工程，降低理解和启动成本 |
 | Web | Spring MVC | REST API 与 MCP WebMVC Server 共用 Servlet 技术栈 |
-| API 文档 | springdoc-openapi | 提供 OpenAPI 与 Swagger UI |
+| API 文档 | springdoc-openapi 3.0.3 | 支持 Spring Boot 4，提供 OpenAPI 与 Swagger UI |
 | JSON | Jackson | Spring Boot 默认 JSON 序列化 |
 | 容错 | Spring Retry | 为模型调用提供可配置重试策略 |
 | 测试 | JUnit 5、AssertJ、Mockito、MockWebServer | 单元、集成和模型 HTTP 适配器测试 |
@@ -272,7 +272,7 @@ OpenAI 兼容配置包括 base URL、API Key、模型名、连接超时、读取
 | `get_disaster_risk` | 查询区域暴雨、洪水和火灾风险 |
 | `validate_rules` | 执行确定性核保规则 |
 
-工具方法使用 Spring AI `@McpTool` 和强类型参数，自动生成 JSON Schema。Spring AI WebMVC MCP Server 暴露工具发现和调用端点。REST 调试入口复用同一个工具注册表，避免 MCP 与 REST 各维护一份业务逻辑。
+工具方法使用 Spring AI `@McpTool` 和强类型参数，自动生成 JSON Schema。Spring AI WebMVC MCP Server 通过推荐的 Streamable HTTP 协议暴露工具发现和调用端点，配置为 `spring.ai.mcp.server.protocol=STREAMABLE`。REST 调试入口复用同一个工具注册表，避免 MCP 与 REST 各维护一份业务逻辑。
 
 默认工具适配器读取虚构数据；缺少保单或数据时返回明确的领域错误。工具调用轨迹记录工具名、输入摘要、状态、耗时和输出摘要，不记录敏感字段。
 
