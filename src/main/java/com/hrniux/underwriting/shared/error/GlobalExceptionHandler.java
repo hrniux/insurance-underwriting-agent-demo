@@ -1,16 +1,22 @@
 package com.hrniux.underwriting.shared.error;
 
+import java.net.URI;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.hrniux.underwriting.model.ModelUnavailableException;
 
@@ -32,9 +38,27 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.SERVICE_UNAVAILABLE, error.errorCode(), error.getMessage(), request);
     }
 
-    @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class,
-            HttpMessageNotReadableException.class, IllegalArgumentException.class})
-    public ResponseEntity<ProblemDetail> validation(Exception error, HttpServletRequest request) {
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ProblemDetail> validation(
+            MethodArgumentNotValidException error,
+            HttpServletRequest request) {
+        ResponseEntity<ProblemDetail> response = response(
+                HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request);
+        response.getBody().setProperty("violations", violations(error.getBindingResult().getFieldErrors()));
+        return response;
+    }
+
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<ProblemDetail> binding(BindException error, HttpServletRequest request) {
+        ResponseEntity<ProblemDetail> response = response(
+                HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request);
+        response.getBody().setProperty("violations", violations(error.getBindingResult().getFieldErrors()));
+        return response;
+    }
+
+    @ExceptionHandler({HttpMessageNotReadableException.class, IllegalArgumentException.class,
+            MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<ProblemDetail> malformed(Exception error, HttpServletRequest request) {
         return response(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request);
     }
 
@@ -54,9 +78,18 @@ public class GlobalExceptionHandler {
         }
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setTitle(status.getReasonPhrase());
+        problem.setInstance(URI.create(request.getRequestURI()));
         problem.setProperty("errorCode", errorCode);
         problem.setProperty("traceId", traceId);
         problem.setProperty("timestamp", Instant.now());
         return ResponseEntity.status(status).header("X-Trace-Id", traceId).body(problem);
+    }
+
+    private Map<String, String> violations(java.util.List<FieldError> fieldErrors) {
+        return fieldErrors.stream().collect(Collectors.toMap(
+                FieldError::getField,
+                error -> error.getDefaultMessage() == null ? "invalid value" : error.getDefaultMessage(),
+                (first, ignored) -> first,
+                LinkedHashMap::new));
     }
 }

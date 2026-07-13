@@ -68,6 +68,9 @@ class UnderwritingApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/underwriting/evaluations"))
+                .andExpect(jsonPath("$.violations.policyNo").isNotEmpty())
+                .andExpect(jsonPath("$.violations.question").isNotEmpty())
                 .andExpect(jsonPath("$.traceId").isNotEmpty())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
     }
@@ -79,6 +82,7 @@ class UnderwritingApiIntegrationTest {
                 .andExpect(header().string("X-Trace-Id", "trace-interview-001"))
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.errorCode").value("SESSION_NOT_FOUND"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/sessions/SES-MISSING"))
                 .andExpect(jsonPath("$.traceId").value("trace-interview-001"))
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
     }

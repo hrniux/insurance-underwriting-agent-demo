@@ -22,7 +22,7 @@ import okhttp3.mockwebserver.RecordedRequest;
 
 class OpenAiCompatibleModelGatewayTest {
 
-    private static final String SECRET = "sk-interview-secret";
+    private static final String SECRET = "test-model-credential";
 
     private MockWebServer server;
 
