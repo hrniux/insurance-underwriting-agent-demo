@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,18 +29,29 @@ public class ToolRegistry {
     }
 
     public ToolInvocation<?> invoke(ToolName toolName, String policyNo) {
+        if (toolName == ToolName.VALIDATE_RULES) {
+            throw new IllegalArgumentException("Use invokeRuleValidation for the rule engine");
+        }
+        return recorded(toolName, policyNo, () -> switch (toolName) {
+            case GET_POLICY -> factTools.getPolicy(policyNo);
+            case GET_QUOTATION -> factTools.getQuotation(policyNo);
+            case GET_UNDERWRITING_HISTORY -> factTools.getUnderwritingHistory(policyNo);
+            case GET_SURVEY_REPORT -> factTools.getSurveyReport(policyNo);
+            case GET_DISASTER_RISK -> factTools.getDisasterRisk(policyNo);
+            case VALIDATE_RULES -> throw new IllegalStateException("unreachable");
+        });
+    }
+
+    public <T> ToolInvocation<T> invokeRuleValidation(String policyNo, Supplier<T> validation) {
+        return recorded(ToolName.VALIDATE_RULES, policyNo, validation);
+    }
+
+    private <T> ToolInvocation<T> recorded(ToolName toolName, String policyNo, Supplier<T> invocation) {
         Instant startedAt = clock.instant();
         long startedNanos = System.nanoTime();
         String inputSummary = "policyNo=" + policyNo;
         try {
-            Object result = switch (toolName) {
-                case GET_POLICY -> factTools.getPolicy(policyNo);
-                case GET_QUOTATION -> factTools.getQuotation(policyNo);
-                case GET_UNDERWRITING_HISTORY -> factTools.getUnderwritingHistory(policyNo);
-                case GET_SURVEY_REPORT -> factTools.getSurveyReport(policyNo);
-                case GET_DISASTER_RISK -> factTools.getDisasterRisk(policyNo);
-                case VALIDATE_RULES -> throw new UnsupportedOperationException("Rule validation is handled by the rule module");
-            };
+            T result = invocation.get();
             ToolCallTrace trace = new ToolCallTrace(toolName, startedAt, elapsedMillis(startedNanos),
                     ToolCallStatus.SUCCESS, inputSummary, result.toString(), null);
             traces.add(trace);

@@ -1,0 +1,11 @@
+package com.hrniux.underwriting.agent;
+
+public enum AgentStep {
+    QUESTION_UNDERSTANDING,
+    BUSINESS_DATA_COLLECTION,
+    KNOWLEDGE_RETRIEVAL,
+    RISK_ANALYSIS,
+    RULE_VALIDATION,
+    RECOMMENDATION_GENERATION,
+    RESULT_PERSISTENCE
+}
