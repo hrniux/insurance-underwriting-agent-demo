@@ -33,6 +33,14 @@ public record AgentProperties(Model model, Rag rag) {
             maxAttempts = maxAttempts <= 0 ? 3 : maxAttempts;
             retryBackoff = retryBackoff == null ? Duration.ofMillis(100) : retryBackoff;
         }
+
+        @Override
+        public String toString() {
+            return "Model[provider=%s, baseUrl=%s, apiKey=REDACTED, model=%s, connectTimeout=%s, "
+                    + "readTimeout=%s, maxAttempts=%d, retryBackoff=%s, fallbackToMock=%s]"
+                    .formatted(provider, baseUrl, model, connectTimeout, readTimeout, maxAttempts, retryBackoff,
+                            fallbackToMock);
+        }
     }
 
     public record Rag(int embeddingDimensions, int chunkSize, int chunkOverlap, int topK) {
