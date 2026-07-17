@@ -66,6 +66,30 @@ curl -sS "$BASE_URL/api/v1/underwriting/evaluations/EVAL-替换为返回值" | p
 curl -sS "$BASE_URL/api/v1/underwriting/evaluations" | python3 -m json.tool
 ```
 
+### 下载中文 Markdown 报告 `/{evaluationId}/report`
+
+报告接口只读取已经保存的评估，不会再次运行七步 Agent。下面先用虚构保单 `P-1001` 创建评估，再保存报告和响应头：
+
+```bash
+evaluation_json=$(curl -sS --fail-with-body \
+  -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
+  -H 'Content-Type: application/json' \
+  -d '{"policyNo":"P-1001","question":"请生成一份便于讲解的核保结论。"}')
+
+evaluation_id=$(printf '%s' "$evaluation_json" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -sS --fail-with-body \
+  -D report-headers.txt \
+  -o "underwriting-report-${evaluation_id}.md" \
+  "$BASE_URL/api/v1/underwriting/evaluations/${evaluation_id}/report"
+
+grep -i '^Content-' report-headers.txt
+sed -n '1,80p' "underwriting-report-${evaluation_id}.md"
+```
+
+稳定的路径模板是 `GET /api/v1/underwriting/evaluations/{evaluationId}/report`。成功响应使用 `text/markdown;charset=UTF-8`，并通过 `Content-Disposition` 给出 `underwriting-report-{evaluationId}.md` 附件名；评估不存在时仍返回统一的 `EVALUATION_NOT_FOUND` Problem Details。
+
 ## 知识文档 `/api/v1/knowledge/documents`
 
 ```bash

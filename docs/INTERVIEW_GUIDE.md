@@ -16,7 +16,7 @@
 
 ### 第 2–3 分钟：展开一组规则、RAG 与轨迹
 
-进入 `P-1001`，点击“运行智能核保”，展示 70 分、四条规则、四条知识证据、七步 Agent 轨迹和六类工具调用，并说明规则结果不能被模型文本降低。
+进入 `P-1001`，点击“运行智能核保”，展示 70 分、四条规则、四条知识证据、七步 Agent 轨迹和六类工具调用，并说明规则结果不能被模型文本降低。最后点击“下载中文 Markdown 报告”，展示系统如何把同一份已保存结果变成可审计交付物。
 
 ### 第 3–4 分钟：说明 REST、MCP 与模型边界
 
@@ -35,6 +35,7 @@
 | 模型切换、超时、重试 | `RoutingModelGateway`、`OpenAiCompatibleModelGateway` |
 | 内部接口封装为 Agent/MCP 工具 | `UnderwritingFactTools`、`ToolRegistry`、`UnderwritingMcpTools` |
 | 规则校验与可解释决策 | `UnderwritingRuleEngine`、`RuleEvaluation`、步骤/工具 Trace |
+| 可审计中文结果交付 | `UnderwritingMarkdownReportService`、`GET /api/v1/underwriting/evaluations/{evaluationId}/report` |
 
 ## 常见面试问题
 
@@ -93,6 +94,10 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回，能支撑
 ### Q14：如果要支持多轮对话怎么做？
 
 会话已有角色消息。生产上按 Token 预算选择历史摘要，事实和规则结果结构化保存，避免每轮重复调用；对会改变承保结论的新事实重新执行规则，并把每次评估关联到会话与版本。
+
+### Q15：为什么报告由后端生成 Markdown，而不是前端拼接或直接生成 PDF？
+
+后端直接接收 `UnderwritingEvaluation`，因此 REST、浏览器和未来批处理可以复用同一口径，也能用单元测试验证中文标签、空数据和 Markdown 转义。Markdown 无需字体和分页依赖，适合代码仓库、评审和面试；前端只绑定下载地址，不复制领域格式。PDF 可以在生产上作为后续渲染层，但不应让演示项目先承担额外复杂度。`GET /api/v1/underwriting/evaluations/{evaluationId}/report` 只读取已保存结果，不会重复执行模型或规则。
 
 ## 容易被追问的取舍
 

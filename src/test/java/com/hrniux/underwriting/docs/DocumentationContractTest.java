@@ -156,6 +156,23 @@ class DocumentationContractTest {
                 "实际结论与预期一致");
     }
 
+    @Test
+    void documentsTheChineseMarkdownReportFlow() throws IOException {
+        assertThat(read("README.md")).contains(
+                "下载中文 Markdown 报告",
+                "不会重新执行模型或规则");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "/{evaluationId}/report",
+                "Content-Disposition",
+                ".md");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "P-1001 报告阅读顺序",
+                "不会重新执行核保");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "可审计交付物",
+                "GET /api/v1/underwriting/evaluations/{evaluationId}/report");
+    }
+
     private String read(String path) throws IOException {
         return Files.readString(ROOT.resolve(path));
     }
