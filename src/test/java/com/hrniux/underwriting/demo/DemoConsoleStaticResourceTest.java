@@ -109,7 +109,14 @@ class DemoConsoleStaticResourceTest {
                 .contains(
                         "@media (max-width: 760px)",
                         ":focus-visible",
-                        "prefers-reduced-motion")
+                        "prefers-reduced-motion",
+                        ".comparison-action",
+                        ".comparison-panel",
+                        ".comparison-summary",
+                        ".comparison-card",
+                        ".comparison-card--failed",
+                        ".comparison-risk",
+                        ".comparison-card__detail")
                 .doesNotContain("@import", "url(http://", "url(https://");
     }
 
