@@ -80,6 +80,20 @@ class DemoConsoleStaticResourceTest {
                 .doesNotContain("innerHTML");
     }
 
+    @Test
+    void servesResponsiveAccessibleStylesWithoutExternalAssets() throws Exception {
+        mvc.perform(get("/demo/styles.css"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString("text/css")));
+
+        assertThat(readClientAsset("static/demo/styles.css"))
+                .contains(
+                        "@media (max-width: 760px)",
+                        ":focus-visible",
+                        "prefers-reduced-motion")
+                .doesNotContain("@import", "url(http://", "url(https://");
+    }
+
     private String readClientAsset(String path) throws IOException {
         try (var stream = new ClassPathResource(path).getInputStream()) {
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
