@@ -141,6 +141,21 @@ class DocumentationContractTest {
                 "/api/v1/underwriting/evaluations");
     }
 
+    @Test
+    void documentsTheRealFourScenarioComparisonFlow() throws IOException {
+        assertThat(read("README.md")).contains(
+                "对比全部场景",
+                "自动通过 1、人工复核 2、拒保 1");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "横向对比",
+                "风险分范围",
+                "部分场景");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "浏览器演示台",
+                "对比全部场景",
+                "实际结论与预期一致");
+    }
+
     private String read(String path) throws IOException {
         return Files.readString(ROOT.resolve(path));
     }
