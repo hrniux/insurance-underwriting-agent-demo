@@ -27,7 +27,7 @@ evaluate_scenario() {
   local question="$4"
   local output_file="$TEMP_DIR/${policy_no}.json"
 
-  echo "[$step/8] $title（$policy_no）"
+  echo "[$step/8] ${title}（${policy_no}）"
   curl --silent --show-error --fail -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
     -H 'Content-Type: application/json' \
     -H "X-Trace-Id: demo-${policy_no}" \

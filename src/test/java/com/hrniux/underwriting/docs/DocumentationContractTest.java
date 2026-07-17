@@ -110,6 +110,7 @@ class DocumentationContractTest {
                 "演示场景目录",
                 "RAG 知识检索",
                 "共享业务工具",
+                "${title}（${policy_no}）",
                 "P-1001",
                 "P-2001",
                 "P-3001",
