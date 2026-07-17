@@ -56,11 +56,10 @@ const LABELS = {
     PROPERTY: "企业财产险"
   },
   documents: {
-    CLAUSE: "保险条款",
-    MANUAL: "核保手册",
-    CASE: "历史案例",
-    POLICY: "内部政策",
-    RISK_GUIDE: "风险指引"
+    PRODUCT_CLAUSE: "保险条款",
+    UNDERWRITING_RULE: "核保规则",
+    RISK_GUIDE: "风险指引",
+    HISTORICAL_CASE: "历史案例"
   },
   steps: {
     QUESTION_UNDERSTANDING: "理解核保问题",
