@@ -80,7 +80,8 @@ class DemoConsoleStaticResourceTest {
                         "PRODUCT_CLAUSE: \"保险条款\"",
                         "UNDERWRITING_RULE: \"核保规则\"",
                         "RISK_GUIDE: \"风险指引\"",
-                        "HISTORICAL_CASE: \"历史案例\"")
+                        "HISTORICAL_CASE: \"历史案例\"",
+                        "EXTREME: \"极端\"")
                 .doesNotContain("innerHTML");
     }
 

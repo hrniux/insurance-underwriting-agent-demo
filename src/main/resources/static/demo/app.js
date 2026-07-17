@@ -39,7 +39,8 @@ const LABELS = {
     LOW: "低",
     MEDIUM: "中",
     HIGH: "高",
-    RED: "红色预警"
+    RED: "红色预警",
+    EXTREME: "极端"
   },
   fireProtection: {
     GOOD: "良好",
