@@ -1,7 +1,9 @@
 package com.hrniux.underwriting.api;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -58,6 +61,40 @@ class UnderwritingApiIntegrationTest {
         mvc.perform(get("/api/v1/underwriting/evaluations/{id}", evaluationId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(evaluationId));
+    }
+
+    @Test
+    void downloadsAChineseMarkdownReportForASavedEvaluation() throws Exception {
+        String evaluationJson = mvc.perform(post("/api/v1/underwriting/evaluations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"policyNo":"P-1001","question":"这张保单是否承保 | 需要说明？\\n第二行"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String evaluationId = JsonPath.read(evaluationJson, "$.id");
+
+        mvc.perform(get("/api/v1/underwriting/evaluations/{id}/report", evaluationId)
+                        .accept("text/markdown"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString("text/markdown")))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        containsString("underwriting-report-" + evaluationId + ".md")))
+                .andExpect(content().string(containsString("# 财险智能核保评估报告")))
+                .andExpect(content().string(containsString("人工复核（`MANUAL_REVIEW`）")))
+                .andExpect(content().string(containsString("`RED_RAINSTORM`")))
+                .andExpect(content().string(containsString("本报告仅用于技术学习和面试演示")));
+    }
+
+    @Test
+    void returnsTheConsistentNotFoundProblemWhenAReportEvaluationDoesNotExist() throws Exception {
+        mvc.perform(get("/api/v1/underwriting/evaluations/EVAL-MISSING/report"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.errorCode").value("EVALUATION_NOT_FOUND"))
+                .andExpect(jsonPath("$.instance")
+                        .value("/api/v1/underwriting/evaluations/EVAL-MISSING/report"));
     }
 
     @Test
