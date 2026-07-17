@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="使用四组虚构保险数据演示七步智能核保流程">
+  <title>中文智能核保演示台</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="hero">
+    <p class="eyebrow">INSURANCE UNDERWRITING AGENT</p>
+    <h1>中文智能核保演示台</h1>
+    <p>选择一组假数据，运行真实七步 Agent 流程，并查看结论背后的规则、知识和工具轨迹。</p>
+    <p class="data-notice">本页面全部业务数据均为虚构数据，仅用于教学与面试演示。</p>
+  </header>
+  <main id="main-content" class="workspace">
+    <aside class="scenario-panel" aria-labelledby="scenario-heading">
+      <h2 id="scenario-heading">第一步：选择演示场景</h2>
+      <p id="scenario-status" aria-live="polite">正在读取场景目录……</p>
+      <div id="scenario-list" class="scenario-list"></div>
+    </aside>
+    <section class="detail-panel" aria-labelledby="detail-heading">
+      <h2 id="detail-heading">第二步：理解投保事实</h2>
+      <div id="scenario-detail" hidden>
+        <p id="expected-decision"></p>
+        <h3 id="scenario-title"></h3>
+        <p id="scenario-summary"></p>
+        <p id="question-text"></p>
+        <ul id="learning-points"></ul>
+        <div id="facts-grid" class="facts-grid"></div>
+        <button id="run-evaluation" type="button" disabled>运行智能核保</button>
+      </div>
+      <p id="detail-status">请选择一组场景。</p>
+    </section>
+    <section class="result-panel" aria-labelledby="result-heading">
+      <h2 id="result-heading">第三步：阅读核保结论与过程</h2>
+      <p id="evaluation-status" aria-live="polite">尚未运行核保。</p>
+      <div id="error-panel" role="alert" hidden></div>
+      <div id="result-content" hidden>
+        <div id="decision-summary"></div>
+        <div id="reason-list"></div>
+        <div id="action-list"></div>
+        <div id="rule-hit-list"></div>
+        <div id="evidence-list"></div>
+        <div id="step-timeline"></div>
+        <div id="tool-trace-list"></div>
+      </div>
+    </section>
+  </main>
+  <noscript>此演示台需要启用 JavaScript；也可以按照 README 使用 API 和演示脚本。</noscript>
+  <script src="./app.js" defer></script>
+</body>
+</html>
