@@ -9,7 +9,9 @@ const state = {
   detail: null,
   evaluation: null,
   detailController: null,
-  evaluationController: null
+  evaluationController: null,
+  comparisonController: null,
+  comparisonResults: []
 };
 
 const LABELS = {
@@ -380,6 +382,110 @@ function renderEvaluation(evaluation, expected) {
   find("#result-content").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function comparisonItem(scenario, evaluation, error = null, durationMs = 0) {
+  return { scenario, evaluation, error, durationMs };
+}
+
+function successfulComparisonItems(items) {
+  return items.filter(item => item.evaluation && !item.error);
+}
+
+function comparisonDistribution(items) {
+  return items.reduce((counts, item) => {
+    const decision = item.evaluation?.decision;
+    if (decision) counts[decision] = (counts[decision] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function renderComparisonSummary(items) {
+  const successful = successfulComparisonItems(items);
+  const distribution = comparisonDistribution(successful);
+  const scores = successful.map(item => clampScore(item.evaluation.riskScore));
+  const matches = successful.filter(item =>
+    item.evaluation.decision === item.scenario.expectedResult?.decision
+  ).length;
+  const ruleCount = successful.reduce((total, item) => total + (item.evaluation.ruleHits?.length || 0), 0);
+  const evidenceCount = successful.reduce((total, item) => total + (item.evaluation.evidence?.length || 0), 0);
+  const scoreRange = scores.length ? `${Math.min(...scores)}–${Math.max(...scores)} 分` : "暂无";
+  const values = [
+    ["成功场景", `${successful.length}/${items.length}`],
+    [
+      "结论分布",
+      `通过 ${distribution.APPROVE || 0} · 复核 ${distribution.MANUAL_REVIEW || 0} · 拒保 ${distribution.REJECT || 0}`
+    ],
+    ["符合预期", `${matches}/${successful.length}`],
+    ["风险分范围", scoreRange],
+    ["规则命中", `${ruleCount} 条`],
+    ["知识证据", `${evidenceCount} 条`]
+  ];
+  setChildren(find("#comparison-summary"), values.map(([title, value]) => {
+    const card = el("article", "comparison-metric");
+    card.append(el("span", null, title), el("strong", null, value));
+    return card;
+  }));
+}
+
+function renderComparisonCard(item) {
+  const card = el("article", item.error ? "comparison-card comparison-card--failed" : "comparison-card");
+  card.append(
+    el("p", "result-card__meta", item.scenario.policyNo),
+    el("h3", null, item.scenario.name)
+  );
+  if (item.error) {
+    card.append(
+      el("p", "comparison-card__error", `运行失败：${item.error}`),
+      el("p", "result-card__meta", "部分场景运行失败，不影响其他场景结果。")
+    );
+    return card;
+  }
+
+  const evaluation = item.evaluation;
+  const score = clampScore(evaluation.riskScore);
+  const badge = el("p", "decision-badge", label("decisions", evaluation.decision));
+  badge.dataset.decision = text(evaluation.decision, "UNKNOWN");
+  const matches = evaluation.decision === item.scenario.expectedResult?.decision;
+  const progress = el("div", "comparison-risk");
+  progress.setAttribute("role", "progressbar");
+  progress.setAttribute("aria-label", `${item.scenario.name}风险分`);
+  progress.setAttribute("aria-valuemin", "0");
+  progress.setAttribute("aria-valuemax", "100");
+  progress.setAttribute("aria-valuenow", String(score));
+  const fill = el("span", "comparison-risk__fill");
+  fill.style.width = `${score}%`;
+  progress.append(fill);
+
+  const facts = el("dl", "comparison-facts");
+  [
+    ["风险等级", label("risks", evaluation.riskLevel)],
+    ["风险分", `${score} 分`],
+    ["规则命中", `${evaluation.ruleHits?.length || 0} 条`],
+    ["知识证据", `${evaluation.evidence?.length || 0} 条`],
+    ["评估耗时", `${item.durationMs} ms`]
+  ].forEach(([term, value]) => facts.append(el("dt", null, term), el("dd", null, value)));
+
+  const detailButton = el("button", "comparison-card__detail", `查看单场景详情：${item.scenario.name}`);
+  detailButton.type = "button";
+  detailButton.addEventListener("click", async () => {
+    await selectScenario(item.scenario.policyNo);
+    find(".detail-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  card.append(
+    badge,
+    el(
+      "p",
+      matches ? "comparison comparison--match" : "comparison comparison--different",
+      matches
+        ? "实际结论与预期一致"
+        : `实际结论与预期不同：${label("decisions", item.scenario.expectedResult?.decision)}`
+    ),
+    progress,
+    facts,
+    detailButton
+  );
+  return card;
+}
+
 function setDetailLoading(loading) {
   const status = find("#detail-status");
   status.hidden = !loading && Boolean(state.detail);
@@ -393,6 +499,20 @@ function setEvaluationLoading(loading) {
   button.textContent = loading ? "核保 Agent 运行中……" : "运行智能核保";
   if (loading) {
     find("#evaluation-status").textContent = "正在执行七步核保流程，请稍候……";
+  }
+}
+
+function setComparisonLoading(loading, completed = 0, total = state.scenarios.length) {
+  const button = find("#run-comparison");
+  button.disabled = loading || state.scenarios.length === 0;
+  button.textContent = loading
+    ? `正在对比 ${completed}/${total}……`
+    : state.comparisonResults.length
+      ? "重新对比全部场景"
+      : "对比全部场景";
+  if (loading) {
+    find("#comparison-status").textContent =
+      `正在顺序运行第 ${Math.min(completed + 1, total)} 组，共 ${total} 组。`;
   }
 }
 
@@ -494,6 +614,59 @@ async function runEvaluation() {
   }
 }
 
+async function runComparison() {
+  if (!state.scenarios.length || state.comparisonController) return;
+
+  const controller = new AbortController();
+  state.comparisonController = controller;
+  state.comparisonResults = [];
+  find("#comparison-panel").hidden = false;
+  find("#comparison-summary").replaceChildren();
+  find("#comparison-grid").replaceChildren();
+  setComparisonLoading(true, 0);
+
+  try {
+    for (const scenario of state.scenarios) {
+      const startedAt = performance.now();
+      try {
+        const evaluation = await requestJson(EVALUATION_API, {
+          method: "POST",
+          signal: controller.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ policyNo: scenario.policyNo, question: scenario.question })
+        });
+        state.comparisonResults.push(comparisonItem(
+          scenario,
+          evaluation,
+          null,
+          Math.max(0, Math.round(performance.now() - startedAt))
+        ));
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        state.comparisonResults.push(comparisonItem(scenario, null, text(error.message, "未知错误")));
+      }
+      setComparisonLoading(true, state.comparisonResults.length);
+    }
+
+    renderComparisonSummary(state.comparisonResults);
+    setChildren(find("#comparison-grid"), state.comparisonResults.map(renderComparisonCard));
+    const failed = state.comparisonResults.filter(item => item.error).length;
+    find("#comparison-status").textContent = failed
+      ? `对比完成：成功 ${state.comparisonResults.length - failed} 组，部分场景运行失败 ${failed} 组。`
+      : `对比完成：${state.comparisonResults.length} 组场景均已运行。`;
+    find("#comparison-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      find("#comparison-status").textContent = `对比中断：${text(error.message)}`;
+    }
+  } finally {
+    if (state.comparisonController === controller) {
+      state.comparisonController = null;
+      setComparisonLoading(false);
+    }
+  }
+}
+
 async function initialize() {
   try {
     const scenarios = await requestJson(SCENARIO_API);
@@ -503,6 +676,8 @@ async function initialize() {
     state.scenarios = scenarios;
     renderScenarioButtons();
     await selectScenario(state.scenarios[0].policyNo);
+    find("#run-comparison").disabled = false;
+    find("#comparison-status").textContent = `可对比 ${state.scenarios.length} 组虚构场景。`;
   } catch (error) {
     showError(error.message);
     find("#scenario-status").textContent = "场景目录加载失败，请刷新页面重试。";
@@ -511,4 +686,5 @@ async function initialize() {
 }
 
 find("#run-evaluation").addEventListener("click", runEvaluation);
+find("#run-comparison").addEventListener("click", runComparison);
 initialize();
