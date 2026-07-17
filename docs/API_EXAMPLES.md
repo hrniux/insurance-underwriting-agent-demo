@@ -14,6 +14,34 @@ curl --fail "$BASE_URL/v3/api-docs" | python3 -m json.tool
 open "$BASE_URL/swagger-ui/index.html"
 ```
 
+## 虚构演示场景 `/api/v1/demo/scenarios`
+
+先查看四组场景摘要，再查看单个场景的完整五类业务事实：
+
+```bash
+curl -sS "$BASE_URL/api/v1/demo/scenarios" | python3 -m json.tool
+curl -sS "$BASE_URL/api/v1/demo/scenarios/P-3001" | python3 -m json.tool
+```
+
+响应同时包含稳定的英文枚举和中文显示值：
+
+```json
+{
+  "policyNo": "P-3001",
+  "name": "暴雨暴露商贸仓库",
+  "expectedResult": {
+    "decision": "MANUAL_REVIEW",
+    "decisionLabel": "人工复核",
+    "riskLevel": "MEDIUM",
+    "riskLevelLabel": "中风险",
+    "riskScore": 40
+  },
+  "sumInsuredDisplay": "1,200 万元"
+}
+```
+
+场景接口只读取虚构教学数据，不创建会话，也不执行核保评估。
+
 ## 会话 `/api/v1/sessions`
 
 ```bash

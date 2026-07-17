@@ -44,14 +44,25 @@ bash scripts/demo.sh
 
 - Swagger UI：<http://localhost:8080/swagger-ui/index.html>
 - OpenAPI JSON：<http://localhost:8080/v3/api-docs>
+- 虚构场景目录：<http://localhost:8080/api/v1/demo/scenarios>
 - MCP Streamable HTTP：`http://localhost:8080/mcp`
 
-## 两个面试演示场景
+## 十分钟学习路线
+
+1. 运行 `mvn clean verify`，确认环境和全部测试正常。
+2. 运行 `mvn spring-boot:run` 启动离线服务。
+3. 打开 `/api/v1/demo/scenarios`，先阅读四组虚构保单和预期结论。
+4. 运行 `bash scripts/demo.sh`，观察八个中文步骤和四次核保评估。
+5. 对照 [虚构核保数据与十分钟学习指南](docs/DEMO_DATA_GUIDE.md)，从业务事实追踪到规则命中、风险加分和最终决策。
+
+## 四个教学演示场景
 
 | 保单号 | 场景 | 关键事实 | 确定性结果 |
 |---|---|---|---|
-| `P-1001` | 高风险仓库企财险 | 保额 2000 万、近三年 2 次出险、排水整改未完成、暴雨红色风险 | `MANUAL_REVIEW`、`HIGH`、70 分 |
-| `P-2001` | 低风险办公楼企财险 | 保额 500 万、无历史出险、无查勘遗留、灾害风险低 | 证据齐全时 `APPROVE`、`LOW`、10 分 |
+| `P-1001` | 临港高风险物流仓库 | 保额 2,000 万元、近三年 2 次出险、排水整改未完成、暴雨红色风险 | 人工复核（`MANUAL_REVIEW`）、高风险（`HIGH`）、70 分 |
+| `P-2001` | 低风险科技办公楼 | 保额 500 万元、无历史出险、无查勘遗留、灾害风险低 | 证据齐全时自动通过（`APPROVE`）、低风险（`LOW`）、10 分 |
+| `P-3001` | 暴雨暴露商贸仓库 | 保额 1,200 万元、1 次出险、整改完成、暴雨红色风险 | 人工复核（`MANUAL_REVIEW`）、中风险（`MEDIUM`）、40 分 |
+| `P-4001` | 极端火灾风险制造厂房 | 保额 800 万元、消防重大缺陷、火灾风险极端 | 拒保（`REJECT`）、高风险（`HIGH`）、60 分 |
 
 知识证据缺失时，即使规则原本允许自动通过，系统也会把决策下限提升到 `MANUAL_REVIEW`，避免无依据自动承保。
 
@@ -103,6 +114,7 @@ docker run --rm -p 8080:8080 insurance-underwriting-agent-demo:local
 src/main/java/com/hrniux/underwriting
 ├── agent      # 七步编排、评估结果与步骤轨迹
 ├── api        # REST 控制器和请求 DTO
+├── demo       # 结构化虚构场景、完整性校验和中文目录 API
 ├── model      # Mock/OpenAI-compatible/路由模型网关
 ├── prompt     # 提示词版本管理和严格渲染
 ├── rag        # 文档解析、切分、Embedding、向量检索
@@ -114,6 +126,7 @@ src/main/java/com/hrniux/underwriting
 
 进一步阅读：
 
+- [虚构核保数据与十分钟学习指南](docs/DEMO_DATA_GUIDE.md)
 - [架构与关键设计](docs/ARCHITECTURE.md)
 - [完整 API / MCP 示例](docs/API_EXAMPLES.md)
 - [面试演示与追问答案](docs/INTERVIEW_GUIDE.md)
@@ -127,7 +140,7 @@ src/main/java/com/hrniux/underwriting
 | 内存会话/评估仓库 | Redis 会话 + PostgreSQL 审计与评估表 |
 | Hash Embedding | 企业 Embedding 模型或合规云模型 |
 | 内存向量库 | PostgreSQL + PGVector、Milvus 或 Elasticsearch |
-| 虚构 Map 工具 | 保单、报价、核保、查勘、灾害平台和规则引擎的真实 API 适配器 |
+| JSON 场景仓库 + 虚构工具 | 保单、报价、核保、查勘、灾害平台和规则引擎的真实 API 适配器 |
 | 单机同步编排 | 状态机/工作流引擎、消息队列、幂等键、超时补偿 |
 | 环境变量密钥 | Vault/KMS、短期凭证、密钥轮转和出口网关 |
 | 单实例指标 | Micrometer、Prometheus、OpenTelemetry Trace、模型成本与召回质量看板 |
