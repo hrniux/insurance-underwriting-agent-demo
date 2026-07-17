@@ -22,6 +22,9 @@ class DocumentationContractTest {
                 "docs/DEMO_DATA_GUIDE.md",
                 "docs/INTERVIEW_GUIDE.md",
                 "scripts/demo.sh",
+                "src/main/resources/static/demo/index.html",
+                "src/main/resources/static/demo/app.js",
+                "src/main/resources/static/demo/styles.css",
                 "Dockerfile",
                 ".dockerignore");
 
@@ -45,6 +48,8 @@ class DocumentationContractTest {
                 "十分钟学习路线",
                 "docs/DEMO_DATA_GUIDE.md",
                 "/api/v1/demo/scenarios",
+                "/demo/",
+                "中文智能核保演示台",
                 "生产化演进",
                 "mvn clean verify",
                 "mvn spring-boot:run",
@@ -116,6 +121,24 @@ class DocumentationContractTest {
                 "P-3001",
                 "P-4001");
         assertThat(ROOT.resolve("scripts/demo.sh")).isExecutable();
+    }
+
+    @Test
+    void documentsTheInteractiveDemoConsoleAndItsFictionalDataBoundary() throws IOException {
+        assertThat(read("README.md")).contains(
+                "http://localhost:8080/demo/",
+                "中文智能核保演示台",
+                "虚构数据");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "浏览器交互演示",
+                "选择演示场景",
+                "运行智能核保",
+                "规则命中",
+                "七步");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "/demo/",
+                "静态演示层",
+                "/api/v1/underwriting/evaluations");
     }
 
     private String read(String path) throws IOException {

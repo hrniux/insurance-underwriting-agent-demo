@@ -23,6 +23,7 @@
 - 模型切换：默认 Mock；也可切到 OpenAI 兼容接口或企业私有化兼容网关，支持连接/读取超时、有限重试和显式降级。
 - 提示词治理：版本化、激活版本、变量声明检查和预览渲染。
 - REST + MCP：REST 用于管理和调试，MCP 用于 Agent 工具发现与调用，两者复用同一业务实现。
+- 中文交互演示：无需复制命令即可选择四组虚构场景，运行真实核保并阅读规则、证据和七步轨迹。
 
 ## 快速启动
 
@@ -42,17 +43,28 @@ bash scripts/demo.sh
 
 浏览器访问：
 
+- 中文智能核保演示台：<http://localhost:8080/demo/>（推荐首次体验）
 - Swagger UI：<http://localhost:8080/swagger-ui/index.html>
 - OpenAPI JSON：<http://localhost:8080/v3/api-docs>
 - 虚构场景目录：<http://localhost:8080/api/v1/demo/scenarios>
 - MCP Streamable HTTP：`http://localhost:8080/mcp`
 
+### 浏览器交互演示（推荐）
+
+启动应用后访问 <http://localhost:8080/demo/>，进入“中文智能核保演示台”。
+
+1. 从左侧选择 `P-1001` 至 `P-4001` 任一虚构场景；
+2. 阅读保单、报价、历史、查勘和灾害五类业务事实；
+3. 点击“运行智能核保”，查看实际结论、预期结论、规则命中、知识证据和七步执行轨迹。
+
+页面数据全部来自 `underwriting-scenarios.json`，仅用于教学和面试演示，不可用于真实承保判断。页面不复制业务判断，而是调用与 API 相同的核保服务。
+
 ## 十分钟学习路线
 
 1. 运行 `mvn clean verify`，确认环境和全部测试正常。
 2. 运行 `mvn spring-boot:run` 启动离线服务。
-3. 打开 `/api/v1/demo/scenarios`，先阅读四组虚构保单和预期结论。
-4. 运行 `bash scripts/demo.sh`，观察八个中文步骤和四次核保评估。
+3. 打开 `/demo/`，选择一组场景并运行一次可视化核保。
+4. 打开 `/api/v1/demo/scenarios` 对照页面数据，再运行 `bash scripts/demo.sh` 观察批量 API 流程。
 5. 对照 [虚构核保数据与十分钟学习指南](docs/DEMO_DATA_GUIDE.md)，从业务事实追踪到规则命中、风险加分和最终决策。
 
 ## 四个教学演示场景

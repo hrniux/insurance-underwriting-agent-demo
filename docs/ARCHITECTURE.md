@@ -13,7 +13,11 @@ flowchart LR
     User["REST / MCP 调用方"] --> API["Spring MVC API"]
     User --> MCP["Spring AI MCP /mcp"]
     User --> DemoAPI["场景目录 /api/v1/demo/scenarios"]
+    DemoUser["浏览器演示用户"] --> Console["静态演示层 /demo/"]
+    Console --> DemoAPI
+    Console --> EvaluationAPI["核保评估 /api/v1/underwriting/evaluations"]
     API --> Agent["UnderwritingAgentOrchestrator"]
+    EvaluationAPI --> Agent
     Agent --> Session["SessionService"]
     Agent --> Tools["ToolRegistry"]
     MCP --> Tools
@@ -30,6 +34,12 @@ flowchart LR
     Router --> Compatible["OpenAI-compatible Gateway"]
     Agent --> Evaluation["EvaluationRepository"]
 ```
+
+### 静态演示层
+
+`/demo/` 由 Spring Boot 直接提供 HTML、原生 JavaScript 和 CSS，不需要 Node.js、外部字体或前端构建。页面先调用 `/api/v1/demo/scenarios` 读取四组虚构场景，用户点击“运行智能核保”后再调用 `/api/v1/underwriting/evaluations`。动态接口内容统一通过安全 DOM API 写入页面，不作为 HTML 字符串执行。
+
+静态演示层只负责把业务事实、结论、规则命中、知识证据和轨迹翻译成更容易理解的中文界面，不复制核保逻辑。场景事实仍来自 `DemoScenarioRepository`，最终结论仍由真实七步 Agent、规则引擎和模型网关共同生成。
 
 ## 3. 结构化虚构场景
 
