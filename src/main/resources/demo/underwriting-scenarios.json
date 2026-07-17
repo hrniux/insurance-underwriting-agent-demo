@@ -1,0 +1,214 @@
+[
+  {
+    "policyNo": "P-1001",
+    "name": "临港高风险物流仓库",
+    "summary": "多项风险因素叠加，展示为什么系统必须转人工复核。",
+    "question": "暴雨风险较高，这张仓库财产险能否承保？",
+    "learningPoints": [
+      "理解多条规则如何叠加风险分",
+      "理解模型不能降低规则给出的人工复核下限"
+    ],
+    "expectedResult": {
+      "decision": "MANUAL_REVIEW",
+      "riskLevel": "HIGH",
+      "riskScore": 70,
+      "ruleCodes": ["RED_RAINSTORM", "REPEATED_CLAIMS", "HIGH_SUM_INSURED", "OPEN_REMEDIATION"]
+    },
+    "policy": {
+      "policyNo": "P-1001",
+      "productCode": "PROPERTY",
+      "insuredName": "华东示例物流有限公司",
+      "occupancy": "WAREHOUSE",
+      "address": "海州市临港区示例路 100 号",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01"
+    },
+    "quotation": {
+      "policyNo": "P-1001",
+      "sumInsured": 20000000,
+      "rate": 0.0035,
+      "premium": 70000,
+      "deductible": 200000
+    },
+    "history": {
+      "policyNo": "P-1001",
+      "claimCountThreeYears": 2,
+      "paidLossThreeYears": 1200000,
+      "priorDecisions": ["2024 年续保转人工复核", "2025 年附加防洪免赔条件承保"]
+    },
+    "survey": {
+      "policyNo": "P-1001",
+      "fireProtectionStatus": "ADEQUATE",
+      "drainageRemediationCompleted": false,
+      "openIssues": ["排水沟扩容未完成", "防水挡板证明待补充"],
+      "conclusion": "建议完成防洪整改后人工复核"
+    },
+    "disaster": {
+      "policyNo": "P-1001",
+      "riskZone": "临港示例区",
+      "rainstorm": "RED",
+      "flood": "HIGH",
+      "fire": "MEDIUM",
+      "dataDate": "2026-07-01"
+    }
+  },
+  {
+    "policyNo": "P-2001",
+    "name": "低风险科技办公楼",
+    "summary": "没有命中风险规则，展示证据齐全时如何自动通过。",
+    "question": "这张低风险办公楼财产险能否承保？",
+    "learningPoints": [
+      "理解基础风险分和自动通过条件",
+      "对照高风险场景识别无待整改事项的影响"
+    ],
+    "expectedResult": {
+      "decision": "APPROVE",
+      "riskLevel": "LOW",
+      "riskScore": 10,
+      "ruleCodes": []
+    },
+    "policy": {
+      "policyNo": "P-2001",
+      "productCode": "PROPERTY",
+      "insuredName": "海州示例科技有限公司",
+      "occupancy": "OFFICE",
+      "address": "海州市高新区示例大道 20 号",
+      "startDate": "2026-03-01",
+      "endDate": "2027-03-01"
+    },
+    "quotation": {
+      "policyNo": "P-2001",
+      "sumInsured": 5000000,
+      "rate": 0.0012,
+      "premium": 6000,
+      "deductible": 50000
+    },
+    "history": {
+      "policyNo": "P-2001",
+      "claimCountThreeYears": 0,
+      "paidLossThreeYears": 0,
+      "priorDecisions": ["2025 年自动核保通过"]
+    },
+    "survey": {
+      "policyNo": "P-2001",
+      "fireProtectionStatus": "GOOD",
+      "drainageRemediationCompleted": true,
+      "openIssues": [],
+      "conclusion": "办公场所管理规范，无待整改事项"
+    },
+    "disaster": {
+      "policyNo": "P-2001",
+      "riskZone": "高新示例区",
+      "rainstorm": "LOW",
+      "flood": "LOW",
+      "fire": "LOW",
+      "dataDate": "2026-07-01"
+    }
+  },
+  {
+    "policyNo": "P-3001",
+    "name": "暴雨暴露商贸仓库",
+    "summary": "只有两项风险因素命中，展示人工复核与中风险的边界案例。",
+    "question": "这张暴雨风险仓库保单为什么需要人工复核？",
+    "learningPoints": [
+      "理解红色暴雨和高保额的组合影响",
+      "区分风险等级与最终核保决策"
+    ],
+    "expectedResult": {
+      "decision": "MANUAL_REVIEW",
+      "riskLevel": "MEDIUM",
+      "riskScore": 40,
+      "ruleCodes": ["RED_RAINSTORM", "HIGH_SUM_INSURED"]
+    },
+    "policy": {
+      "policyNo": "P-3001",
+      "productCode": "PROPERTY",
+      "insuredName": "东岸示例商贸有限公司",
+      "occupancy": "WAREHOUSE",
+      "address": "海州市东岸区商贸路 88 号",
+      "startDate": "2026-05-01",
+      "endDate": "2027-05-01"
+    },
+    "quotation": {
+      "policyNo": "P-3001",
+      "sumInsured": 12000000,
+      "rate": 0.0020,
+      "premium": 24000,
+      "deductible": 100000
+    },
+    "history": {
+      "policyNo": "P-3001",
+      "claimCountThreeYears": 1,
+      "paidLossThreeYears": 80000,
+      "priorDecisions": ["2025 年标准条件承保"]
+    },
+    "survey": {
+      "policyNo": "P-3001",
+      "fireProtectionStatus": "ADEQUATE",
+      "drainageRemediationCompleted": true,
+      "openIssues": [],
+      "conclusion": "排水整改已完成，建议关注区域暴雨暴露"
+    },
+    "disaster": {
+      "policyNo": "P-3001",
+      "riskZone": "东岸示例区",
+      "rainstorm": "RED",
+      "flood": "MEDIUM",
+      "fire": "LOW",
+      "dataDate": "2026-07-01"
+    }
+  },
+  {
+    "policyNo": "P-4001",
+    "name": "极端火灾风险制造厂房",
+    "summary": "消防重大缺陷叠加极端火灾暴露，展示不可降低的拒保底线。",
+    "question": "这张存在重大消防缺陷的厂房保单能否承保？",
+    "learningPoints": [
+      "理解极端火灾与重大消防缺陷的组合规则",
+      "理解拒保结论为什么不能被模型改写"
+    ],
+    "expectedResult": {
+      "decision": "REJECT",
+      "riskLevel": "HIGH",
+      "riskScore": 60,
+      "ruleCodes": ["CRITICAL_FIRE_DEFECT"]
+    },
+    "policy": {
+      "policyNo": "P-4001",
+      "productCode": "PROPERTY",
+      "insuredName": "北湾示例制造有限公司",
+      "occupancy": "FACTORY",
+      "address": "海州市北湾工业区示例路 66 号",
+      "startDate": "2026-06-01",
+      "endDate": "2027-06-01"
+    },
+    "quotation": {
+      "policyNo": "P-4001",
+      "sumInsured": 8000000,
+      "rate": 0.0045,
+      "premium": 36000,
+      "deductible": 100000
+    },
+    "history": {
+      "policyNo": "P-4001",
+      "claimCountThreeYears": 0,
+      "paidLossThreeYears": 0,
+      "priorDecisions": ["首次投保"]
+    },
+    "survey": {
+      "policyNo": "P-4001",
+      "fireProtectionStatus": "CRITICAL_DEFECT",
+      "drainageRemediationCompleted": true,
+      "openIssues": ["消防主泵无法启动", "自动喷淋系统未通过联动测试"],
+      "conclusion": "存在重大消防缺陷，整改完成前不建议承保"
+    },
+    "disaster": {
+      "policyNo": "P-4001",
+      "riskZone": "北湾示例工业区",
+      "rainstorm": "LOW",
+      "flood": "LOW",
+      "fire": "EXTREME",
+      "dataDate": "2026-07-01"
+    }
+  }
+]
