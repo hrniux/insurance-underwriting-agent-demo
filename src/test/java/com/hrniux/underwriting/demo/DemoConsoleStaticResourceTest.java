@@ -64,6 +64,9 @@ class DemoConsoleStaticResourceTest {
                 "id=\"comparison-panel\"",
                 "id=\"comparison-summary\"",
                 "id=\"comparison-grid\"",
+                "id=\"report-action\"",
+                "id=\"download-report\"",
+                "下载中文 Markdown 报告",
                 "第四步：横向比较全部场景",
                 "aria-live=\"polite\"");
     }
@@ -84,6 +87,10 @@ class DemoConsoleStaticResourceTest {
                         "for (const scenario of state.scenarios)",
                         "renderComparisonSummary",
                         "renderComparisonCard",
+                        "configureReportDownload",
+                        "encodeURIComponent(evaluationId)",
+                        "removeAttribute(\"href\")",
+                        "removeAttribute(\"download\")",
                         "部分场景运行失败",
                         "查看单场景详情",
                         "replaceChildren",
@@ -116,7 +123,9 @@ class DemoConsoleStaticResourceTest {
                         ".comparison-card",
                         ".comparison-card--failed",
                         ".comparison-risk",
-                        ".comparison-card__detail")
+                        ".comparison-card__detail",
+                        ".report-action",
+                        ".report-download")
                 .doesNotContain("@import", "url(http://", "url(https://");
     }
 

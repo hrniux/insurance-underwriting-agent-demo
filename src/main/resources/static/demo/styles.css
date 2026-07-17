@@ -338,7 +338,8 @@ h4 {
 
 #run-evaluation,
 #run-comparison,
-.comparison-card__detail {
+.comparison-card__detail,
+.report-download {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -356,7 +357,8 @@ h4 {
 
 #run-evaluation:hover:not(:disabled),
 #run-comparison:hover:not(:disabled),
-.comparison-card__detail:hover:not(:disabled) {
+.comparison-card__detail:hover:not(:disabled),
+.report-download:hover {
   filter: brightness(1.08);
   transform: translateY(-1px);
 }
@@ -372,6 +374,29 @@ h4 {
   width: 100%;
   background: linear-gradient(135deg, var(--navy), var(--navy-deep));
   box-shadow: 0 10px 22px rgba(8, 45, 58, 0.18);
+}
+
+.report-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--teal-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: 0.85rem;
+}
+
+.report-action p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.report-download {
+  flex: 0 0 auto;
+  text-decoration: none;
 }
 
 .decision-badge {
@@ -781,6 +806,15 @@ a:focus-visible {
     align-items: flex-start;
   }
 
+  .report-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-download {
+    width: 100%;
+  }
+
   .step-timeline {
     grid-template-columns: 1fr;
     overflow: visible;
@@ -833,7 +867,8 @@ a:focus-visible {
     margin-bottom: 0.55rem;
   }
 
-  #run-evaluation {
+  #run-evaluation,
+  .report-download {
     width: 100%;
   }
 

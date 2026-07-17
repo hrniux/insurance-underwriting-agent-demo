@@ -369,6 +369,15 @@ function renderToolTraces(items) {
   setChildren(find("#tool-trace-list"), [section]);
 }
 
+function configureReportDownload(evaluationId) {
+  const action = find("#report-action");
+  const link = find("#download-report");
+  const encodedId = encodeURIComponent(evaluationId);
+  link.href = `${EVALUATION_API}/${encodedId}/report`;
+  link.download = `underwriting-report-${text(evaluationId)}.md`;
+  action.hidden = false;
+}
+
 function renderEvaluation(evaluation, expected) {
   renderDecisionSummary(evaluation, expected);
   renderTextList("reason-list", "核保原因", evaluation.reasons);
@@ -377,6 +386,7 @@ function renderEvaluation(evaluation, expected) {
   renderEvidence(Array.isArray(evaluation.evidence) ? evaluation.evidence : []);
   renderStepTraces(Array.isArray(evaluation.stepTraces) ? evaluation.stepTraces : []);
   renderToolTraces(Array.isArray(evaluation.toolTraces) ? evaluation.toolTraces : []);
+  configureReportDownload(evaluation.id);
   find("#result-content").hidden = false;
   find("#evaluation-status").textContent = `核保完成，评估编号：${text(evaluation.id)}`;
   find("#result-content").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -531,6 +541,10 @@ function showError(message) {
 function resetEvaluation() {
   state.evaluation = null;
   find("#result-content").hidden = true;
+  find("#report-action").hidden = true;
+  const reportLink = find("#download-report");
+  reportLink.removeAttribute("href");
+  reportLink.removeAttribute("download");
   [
     "#decision-summary",
     "#reason-list",
