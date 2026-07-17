@@ -20,6 +20,10 @@
       <h2 id="scenario-heading">第一步：选择演示场景</h2>
       <p id="scenario-status" aria-live="polite">正在读取场景目录……</p>
       <div id="scenario-list" class="scenario-list"></div>
+      <div class="comparison-action">
+        <button id="run-comparison" type="button" disabled>对比全部场景</button>
+        <p id="comparison-status" aria-live="polite">场景目录加载完成后即可运行横向对比。</p>
+      </div>
     </aside>
     <section class="detail-panel" aria-labelledby="detail-heading">
       <h2 id="detail-heading">第二步：理解投保事实</h2>
@@ -47,6 +51,12 @@
         <div id="step-timeline"></div>
         <div id="tool-trace-list"></div>
       </div>
+    </section>
+    <section id="comparison-panel" class="comparison-panel" aria-labelledby="comparison-heading" hidden>
+      <h2 id="comparison-heading">第四步：横向比较全部场景</h2>
+      <p>四组结果均来自真实核保接口，用于理解风险事实如何改变确定性结论。</p>
+      <div id="comparison-summary" class="comparison-summary"></div>
+      <div id="comparison-grid" class="comparison-grid"></div>
     </section>
   </main>
   <noscript>此演示台需要启用 JavaScript；也可以按照 README 使用 API 和演示脚本。</noscript>

@@ -59,6 +59,12 @@ class DemoConsoleStaticResourceTest {
                 "本页面全部业务数据均为虚构数据",
                 "id=\"scenario-list\"",
                 "id=\"run-evaluation\"",
+                "id=\"run-comparison\"",
+                "id=\"comparison-status\"",
+                "id=\"comparison-panel\"",
+                "id=\"comparison-summary\"",
+                "id=\"comparison-grid\"",
+                "第四步：横向比较全部场景",
                 "aria-live=\"polite\"");
     }
 
