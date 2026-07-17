@@ -24,8 +24,8 @@ public class DemoScenarioRepository {
 
     private final Map<String, DemoScenario> scenarios;
 
-    public DemoScenarioRepository(ObjectMapper mapper) {
-        this(mapper, new ClassPathResource(DATA_RESOURCE));
+    public DemoScenarioRepository() {
+        this(defaultMapper(), new ClassPathResource(DATA_RESOURCE));
     }
 
     DemoScenarioRepository(ObjectMapper mapper, Resource resource) {
@@ -37,8 +37,7 @@ public class DemoScenarioRepository {
     }
 
     public static DemoScenarioRepository loadDefault() {
-        ObjectMapper mapper = JsonMapper.builder().findAndAddModules().build();
-        return new DemoScenarioRepository(mapper, new ClassPathResource(DATA_RESOURCE));
+        return new DemoScenarioRepository();
     }
 
     public List<DemoScenario> findAll() {
@@ -62,6 +61,10 @@ public class DemoScenarioRepository {
         catch (IOException | RuntimeException error) {
             throw new IllegalStateException("无法读取演示场景资源：" + resource.getDescription(), error);
         }
+    }
+
+    private static ObjectMapper defaultMapper() {
+        return JsonMapper.builder().findAndAddModules().build();
     }
 
     private static Map<String, DemoScenario> validateAndIndex(List<DemoScenario> values) {

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import com.hrniux.underwriting.demo.DemoScenarioRepository;
 import com.hrniux.underwriting.model.DeterministicMockModelGateway;
 import com.hrniux.underwriting.prompt.PromptTemplateService;
 import com.hrniux.underwriting.rag.KnowledgeService;
@@ -74,7 +75,7 @@ class UnderwritingAgentOrchestratorTest {
         UnderwritingAgentOrchestrator isolated = isolatedOrchestrator(
                 emptyKnowledge,
                 prompts,
-                new ToolRegistry(new FakeUnderwritingFactTools()));
+                new ToolRegistry(new FakeUnderwritingFactTools(DemoScenarioRepository.loadDefault())));
 
         UnderwritingEvaluation evaluation = isolated.evaluate(
                 new EvaluationRequest(null, "P-2001", "这张低风险办公楼保单是否可以承保？"));

@@ -9,6 +9,8 @@ import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.hrniux.underwriting.demo.DemoScenarioRepository;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 
@@ -33,7 +35,7 @@ class UnderwritingMcpToolsTest {
     @BeforeEach
     void setUp() {
         tools = new UnderwritingMcpTools(
-                new ToolRegistry(new FakeUnderwritingFactTools()),
+                new ToolRegistry(new FakeUnderwritingFactTools(DemoScenarioRepository.loadDefault())),
                 new UnderwritingRuleEngine());
     }
 

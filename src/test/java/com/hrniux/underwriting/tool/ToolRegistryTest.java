@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.hrniux.underwriting.demo.DemoScenarioRepository;
 import com.hrniux.underwriting.shared.error.ResourceNotFoundException;
 
 class ToolRegistryTest {
@@ -19,7 +20,7 @@ class ToolRegistryTest {
     @BeforeEach
     void setUp() {
         registry = new ToolRegistry(
-                new FakeUnderwritingFactTools(),
+                new FakeUnderwritingFactTools(DemoScenarioRepository.loadDefault()),
                 Clock.fixed(Instant.parse("2026-07-13T06:00:00Z"), ZoneOffset.UTC));
     }
 

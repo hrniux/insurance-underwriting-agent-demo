@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.hrniux.underwriting.demo.DemoScenarioRepository;
 import com.hrniux.underwriting.tool.DisasterRiskFacts;
 import com.hrniux.underwriting.tool.FakeUnderwritingFactTools;
 import com.hrniux.underwriting.tool.HazardLevel;
@@ -20,7 +21,7 @@ class UnderwritingRuleEngineTest {
 
     @BeforeEach
     void setUp() {
-        facts = new FakeUnderwritingFactTools();
+        facts = new FakeUnderwritingFactTools(DemoScenarioRepository.loadDefault());
         engine = new UnderwritingRuleEngine();
     }
 
@@ -58,6 +59,28 @@ class UnderwritingRuleEngineTest {
         assertThat(evaluation.riskLevel()).isEqualTo(RiskLevel.LOW);
         assertThat(evaluation.riskScore()).isLessThan(40);
         assertThat(evaluation.hits()).isEmpty();
+    }
+
+    @Test
+    void appliesTwoRulesToTheMediumRiskTeachingScenario() {
+        RuleEvaluation evaluation = engine.evaluate(context("P-3001"));
+
+        assertThat(evaluation.decision()).isEqualTo(Decision.MANUAL_REVIEW);
+        assertThat(evaluation.riskLevel()).isEqualTo(RiskLevel.MEDIUM);
+        assertThat(evaluation.riskScore()).isEqualTo(40);
+        assertThat(evaluation.hits()).extracting(RuleResult::code)
+                .containsExactly("RED_RAINSTORM", "HIGH_SUM_INSURED");
+    }
+
+    @Test
+    void rejectsTheExtremeFireTeachingScenario() {
+        RuleEvaluation evaluation = engine.evaluate(context("P-4001"));
+
+        assertThat(evaluation.decision()).isEqualTo(Decision.REJECT);
+        assertThat(evaluation.riskLevel()).isEqualTo(RiskLevel.HIGH);
+        assertThat(evaluation.riskScore()).isEqualTo(60);
+        assertThat(evaluation.hits()).extracting(RuleResult::code)
+                .containsExactly("CRITICAL_FIRE_DEFECT");
     }
 
     private UnderwritingContext context(String policyNo) {
