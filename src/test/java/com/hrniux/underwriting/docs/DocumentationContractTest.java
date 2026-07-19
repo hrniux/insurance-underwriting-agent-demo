@@ -251,7 +251,7 @@ class DocumentationContractTest {
                 "persistent-demo",
                 "data/underwriting.mv.db",
                 "PERSISTENT_DB_URL",
-                "知识库、Prompt 版本和 `Idempotency-Key` 注册表仍在内存中");
+                "知识库、Prompt 版本、异步任务状态和 `Idempotency-Key` 注册表仍在内存中");
         assertThat(read("docs/ARCHITECTURE.md")).contains(
                 "JdbcSessionRepository",
                 "JdbcEvaluationRepository",
@@ -269,6 +269,31 @@ class DocumentationContractTest {
         assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
                 "默认 Profile 重启后内存评估会丢失",
                 "H2 文件");
+    }
+
+    @Test
+    void documentsTheBoundedAsyncTaskLifecycleAndOperationalBoundary() throws IOException {
+        assertThat(read("README.md")).contains(
+                "/api/v1/underwriting/tasks",
+                "PENDING → RUNNING → SUCCEEDED/FAILED",
+                "TASK_QUEUE_CAPACITY",
+                "TASK_RETENTION");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "UnderwritingTaskService",
+                "ThreadPoolTaskExecutor",
+                "underwriting.task.transitions",
+                "TASK_EXECUTION_FAILED");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "202 Accepted",
+                "failure.errorCode",
+                "持久化任务表/工作流引擎");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "### Q17",
+                "任务编号、可查询状态、幂等、容量边界、失败快照和指标",
+                "租约、心跳、取消、补偿");
+        assertThat(read(".env.example")).contains(
+                "TASK_CORE_POOL_SIZE",
+                "TASK_MAX_ENTRIES");
     }
 
     private String read(String path) throws IOException {

@@ -19,6 +19,10 @@ flowchart LR
     Console --> ReviewAPI["人工复核 /evaluations/{id}/review"]
     API --> Agent["UnderwritingAgentOrchestrator"]
     EvaluationAPI --> Submission["EvaluationSubmissionService"]
+    TaskAPI["异步任务 /api/v1/underwriting/tasks"] --> TaskService["UnderwritingTaskService"]
+    TaskService --> TaskRepository["UnderwritingTaskRepository"]
+    TaskService --> TaskExecutor["有界 ThreadPoolTaskExecutor"]
+    TaskExecutor --> Submission
     Submission --> Agent
     Submission --> Metrics["Micrometer metrics"]
     Submission --> Idempotency["Bounded idempotency registry"]
@@ -136,7 +140,28 @@ MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/m
 不包含故障注入。生产适配器还应把超时、限流、无数据、权限失败和程序缺陷分类，只有允许的故障
 类型才能进入降级路径。
 
-## 9. 幂等、并发与指标
+## 9. 异步任务、幂等与指标
+
+同步评估 API 保留给需要立即获取结果的调用方；`POST /api/v1/underwriting/tasks` 则把同一个
+`EvaluationSubmissionService` 放入有界执行器，立即返回任务快照和 `Location`。任务状态机只有四个状态：
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: 接收并保存任务
+    PENDING --> RUNNING: 工作线程取得任务
+    RUNNING --> SUCCEEDED: 保存 evaluationId
+    RUNNING --> FAILED: 保存安全 failure
+    SUCCEEDED --> [*]
+    FAILED --> [*]
+```
+
+`UnderwritingTask` 是不可变 record，并在构造时校验每个状态允许出现的时间戳、评估编号和失败字段，禁止
+终态再次转换。默认执行器为 2 个核心线程、最多 4 个线程、100 个排队任务；任务仓库最多保留 1,000 条，
+只在新提交时清理超过 24 小时的终态任务。队列或记录容量耗尽时返回 `503`，而不是无界消耗内存和线程。
+
+任务提交拥有独立的幂等槽位：相同键、相同规范化请求重放原任务，不会重复执行 Agent；同键异参返回
+`409 IDEMPOTENCY_KEY_CONFLICT`。后台异常被分类为领域错误、模型错误或固定的
+`TASK_EXECUTION_FAILED`，API 不返回堆栈和任意内部异常信息。
 
 `POST /api/v1/underwriting/evaluations` 可选接收 `Idempotency-Key`。提交服务对规范化后的
 `sessionId + policyNo + question` 计算 SHA-256 指纹，并用一个短临界区原子认领键：
@@ -158,6 +183,9 @@ MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/m
 | `underwriting.evaluation.duration` | `outcome` | 包含并发等待时间的 API 提交耗时 |
 | `underwriting.evaluation.decisions` | `decision`、`risk_level` | 实际执行生成的结论分布，不重复统计重放请求 |
 | `underwriting.agent.degradations` | `tool`、`reason` | 实际执行发生的安全降级；重放请求不重复统计 |
+| `underwriting.task.submissions` | `outcome` | `accepted`、`replayed`、`conflict`、`rejected`、`failed` 任务提交数 |
+| `underwriting.task.transitions` | `status` | `running`、`succeeded`、`failed` 状态转换数 |
+| `underwriting.task.duration` | `outcome` | 后台任务从运行到成功/失败的耗时 |
 
 `/actuator/metrics/{metricName}` 可直接检查本机指标。生产环境再接 Prometheus Registry 和告警系统。
 
@@ -207,7 +235,7 @@ Spring Profile 选择：
 
 这个设计刻意控制在教学规模。H2 文件不适合容器多副本共享，聚合 JSON 不适合复杂报表，初始化 SQL 也没有
 生产迁移历史；会话、评估和人工复核的多次写入目前不是一个跨聚合事务。生产演进应使用 PostgreSQL JSONB/
-结构化字段、Flyway、事务边界、乐观锁或 Outbox，并把更正建模成追加事件。知识库、Prompt 和幂等注册表仍是
+结构化字段、Flyway、事务边界、乐观锁或 Outbox，并把更正建模成追加事件。知识库、Prompt、任务和幂等注册表仍是
 内存实现，也需要分别迁移到向量数据库、配置中心和 Redis/数据库。
 
 ## 12. 一致性与生产演进
@@ -217,7 +245,7 @@ Spring Profile 选择：
 
 - 会话版本号、跨节点幂等记录和数据库事务；
 - 分布式锁或工作流实例级串行；
-- 异步任务、超时取消、补偿与死信队列；
+- 持久化任务恢复、租约/心跳、超时取消、补偿与死信队列；
 - RAG 文档状态机（草稿、审核、发布、下线）和索引版本；
 - 租户隔离、RBAC、脱敏、全链路审计和数据留存策略；
 - Prompt/模型灰度、离线评测集、召回指标和经过审批的脱敏反馈样本集。
@@ -229,6 +257,7 @@ Spring Profile 选择：
 | `SessionRepository` | 默认内存 / 可选 H2 JDBC | Redis / PostgreSQL |
 | `EvaluationRepository` | 默认内存 / 可选 H2 JDBC | PostgreSQL / 审计仓库 |
 | `HumanReviewRepository` | 默认内存 / 可选 H2 唯一键 | PostgreSQL 追加事件 / 工作流任务库 |
+| `UnderwritingTaskRepository` | 有界内存任务快照 | 工作流引擎 / PostgreSQL 任务表与租约 |
 | `EmbeddingService` | Hash | 企业 Embedding API |
 | `VectorStore` | 内存 | PGVector / Milvus |
 | `UnderwritingFactTools` | JSON 场景仓库 | 内部 REST/gRPC/MQ 适配器 |

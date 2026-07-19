@@ -1,28 +1,21 @@
 package com.hrniux.underwriting.agent;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.hrniux.underwriting.shared.config.IdempotencyProperties;
 import com.hrniux.underwriting.shared.error.ConflictException;
-import com.hrniux.underwriting.shared.error.InvalidRequestException;
 import com.hrniux.underwriting.shared.error.ServiceCapacityException;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -34,7 +27,6 @@ public class EvaluationSubmissionService {
     public static final String IDEMPOTENCY_HEADER = "Idempotency-Key";
     public static final String REPLAY_HEADER = "Idempotency-Replayed";
 
-    private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private static final String SUBMISSION_METRIC = "underwriting.evaluation.submissions";
     private static final String DURATION_METRIC = "underwriting.evaluation.duration";
     private static final String DECISION_METRIC = "underwriting.evaluation.decisions";
@@ -69,14 +61,14 @@ public class EvaluationSubmissionService {
         Timer.Sample timer = Timer.start(metrics);
         SubmissionOutcome outcome = SubmissionOutcome.FAILED;
         try {
-            String idempotencyKey = normalizeKey(rawIdempotencyKey);
+            String idempotencyKey = EvaluationIdempotency.normalizeKey(rawIdempotencyKey);
             if (idempotencyKey == null) {
                 UnderwritingEvaluation evaluation = createEvaluation(request);
                 outcome = SubmissionOutcome.CREATED;
                 return new EvaluationSubmissionResult(evaluation, false);
             }
 
-            Claim claim = claim(idempotencyKey, fingerprint(request));
+            Claim claim = claim(idempotencyKey, EvaluationIdempotency.fingerprint(request));
             if (!claim.owner()) {
                 UnderwritingEvaluation evaluation = await(claim.slot());
                 outcome = SubmissionOutcome.REPLAYED;
@@ -116,19 +108,6 @@ public class EvaluationSubmissionService {
                     "reason", degradation.code()).increment();
         }
         return evaluation;
-    }
-
-    private String normalizeKey(String rawKey) {
-        if (rawKey == null || rawKey.isBlank()) {
-            return null;
-        }
-        String key = rawKey.trim();
-        if (!IDEMPOTENCY_KEY.matcher(key).matches()) {
-            throw new InvalidRequestException(
-                    "INVALID_IDEMPOTENCY_KEY",
-                    "Idempotency-Key must be 1-128 characters using letters, digits, dot, underscore, colon or hyphen");
-        }
-        return key;
     }
 
     private Claim claim(String key, String fingerprint) {
@@ -204,29 +183,6 @@ public class EvaluationSubmissionService {
             }
             throw new IllegalStateException("Idempotent evaluation failed", error.getCause());
         }
-    }
-
-    private String fingerprint(EvaluationRequest request) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            update(digest, request.sessionId());
-            update(digest, request.policyNo());
-            update(digest, request.question());
-            return HexFormat.of().formatHex(digest.digest());
-        }
-        catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is not available", impossible);
-        }
-    }
-
-    private void update(MessageDigest digest, String value) {
-        if (value == null) {
-            digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(-1).array());
-            return;
-        }
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
-        digest.update(bytes);
     }
 
     private enum SubmissionOutcome {

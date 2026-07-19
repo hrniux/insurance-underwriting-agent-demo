@@ -124,6 +124,50 @@ curl -sS "$BASE_URL/actuator/metrics/underwriting.human.review.delay" | python3 
 
 二者只使用 `outcome` 和 `relationship` 枚举标签，不使用人员、评估或保单编号。
 
+## 异步核保任务 `/api/v1/underwriting/tasks`
+
+提交任务时立即返回 `202 Accepted`、`Location`、`Idempotency-Replayed: false` 和当前任务快照：
+
+```bash
+task_json=$(curl -i -sS --fail-with-body \
+  -X POST "$BASE_URL/api/v1/underwriting/tasks" \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: async-p1001-001' \
+  -d '{"policyNo":"P-1001","question":"后台执行完整七步核保。"}')
+```
+
+实际脚本可不加 `-i`，提取任务编号后轮询：
+
+```bash
+task_body=$(curl -sS --fail-with-body \
+  -X POST "$BASE_URL/api/v1/underwriting/tasks" \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: async-p2001-001' \
+  -d '{"policyNo":"P-2001","question":"后台判断这张办公楼保单。"}')
+
+task_id=$(printf '%s' "$task_body" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -sS "$BASE_URL/api/v1/underwriting/tasks/${task_id}" | python3 -m json.tool
+curl -sS "$BASE_URL/api/v1/underwriting/tasks" | python3 -m json.tool
+```
+
+状态只会按 `PENDING → RUNNING → SUCCEEDED/FAILED` 转换。成功响应中的 `evaluationId` 指向普通评估
+查询/报告接口；失败任务返回 `failure.errorCode` 与安全消息，`evaluationId` 为 `null`。相同幂等键和载荷
+再次提交返回原任务、HTTP `200` 和 `Idempotency-Replayed: true`；同键异参返回 `409`。
+
+任务运行指标：
+
+```bash
+curl -sS "$BASE_URL/actuator/metrics/underwriting.task.submissions" | python3 -m json.tool
+curl -sS "$BASE_URL/actuator/metrics/underwriting.task.transitions" | python3 -m json.tool
+curl -sS "$BASE_URL/actuator/metrics/underwriting.task.duration" | python3 -m json.tool
+```
+
+任务状态和任务幂等槽位当前是单实例内存数据，即使启用 `persistent-demo` 也不会恢复正在排队或运行的任务；
+但已经成功生成的会话与评估会由该 Profile 持久化。生产环境需要持久化任务表/工作流引擎、租约、心跳、
+超时取消、重试策略和补偿，而不是只换一个更大的线程池。
+
 ### 可重复的灾害平台降级演示
 
 先停止普通进程，然后使用专用 Profile 启动：

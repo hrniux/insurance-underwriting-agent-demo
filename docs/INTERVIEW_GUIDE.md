@@ -24,7 +24,7 @@
 
 ### 第 4–5 分钟：讲可靠性与生产化
 
-说明 `Idempotency-Key` 如何合并并发重复请求；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线；再切到 `persistent-demo` 说明仓储端口不变、重启后仍能读到评估与复核。展示六组 Actuator 指标后，给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
+提交一次异步任务，说明 `202 + Location`、四态状态机、有界线程池/队列和任务级 `Idempotency-Key`；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线，再切到 `persistent-demo` 说明仓储端口不变、重启后仍能读到评估与复核。展示九组 Actuator 指标后，给出工作流引擎、Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
 
 ## 简历职责如何映射到代码
 
@@ -40,6 +40,7 @@
 | 内部系统故障分级与安全降级 | `ToolCriticality`、`ToolAttempt`、`DegradationNotice`、`degraded-demo` Profile |
 | 人工复核与 Agent 效果反馈闭环 | `HumanReviewService`、`HumanReviewRepository`、Review API、人工复核指标 |
 | 会话、评估与复核的重启恢复 | `persistent-demo`、三个 `Jdbc*Repository`、H2 Schema、Repository 端口隔离 |
+| 异步任务编排与过载保护 | `UnderwritingTaskService`、四态状态机、`ThreadPoolTaskExecutor`、任务级幂等和任务指标 |
 
 ## 常见面试问题
 
@@ -107,11 +108,16 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提
 
 目标是用一个可离线、可自动建表、可真实重启验证的适配器说明 Repository 端口和数据库约束，避免让面试者先安装中间件。表中把主键、关联键、时间和唯一约束结构化，完整不可变聚合保存为 JSON CLOB，既能恢复所有步骤/证据/轨迹，又控制了 Demo 代码量。代价是查询分析能力、迁移治理和多实例能力有限；生产会换 PostgreSQL 的 JSONB/结构化字段、Flyway、事务与 Outbox，不会共享 H2 文件。测试同时断言默认 Profile 选择内存实现、`persistent-demo` 选择 JDBC 实现，并覆盖 JSON 往返和不可覆盖复核。
 
+### Q17：为什么异步任务不直接加一个 `@Async`？
+
+`@Async` 只能把方法扔到另一个线程，不能自动提供任务编号、可查询状态、幂等、容量边界、失败快照和指标。本项目先保存 `PENDING`，工作线程原子推进到 `RUNNING`，最终只允许进入 `SUCCEEDED` 或 `FAILED`；执行器、队列和任务保留数都有上限，同键重试返回原任务，失败只暴露分类后的安全错误。当前仍是单实例调度器：没有持久化队列、租约、心跳、取消、补偿和跨节点抢占。生产长任务会迁移到工作流引擎或数据库任务表加消息队列，而不是简单扩大线程池。
+
 ## 容易被追问的取舍
 
 - Hash Embedding 是演示替身，不应包装成生产语义模型。
 - 默认仓库是内存实现；可选 H2 Profile 能演示重启恢复，但不是生产数据库架构。
 - H2 Profile 尚未覆盖知识库、Prompt 和幂等注册表，也没有生产级迁移、跨聚合事务或多节点协调。
+- 异步任务状态和任务幂等仍在单实例内存中；进程退出时不会恢复排队/运行任务，也没有取消与自动补偿。
 - 人工复核使用演示人员编号且没有 RBAC/电子签名，不能冒充真实授权审批。
 - 规则阈值和条款均为虚构，不代表真实公司规则。
 - Agent 自动化的是辅助决策，不是绕过人工授权。

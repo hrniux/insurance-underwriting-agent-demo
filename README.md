@@ -19,6 +19,7 @@
 - 会话管理：创建/恢复会话，按角色保存用户和助手消息。
 - Agent 编排：固定七步流水线，成功或失败都保留步骤轨迹。
 - 幂等与并发保护：可选 `Idempotency-Key` 把并发重复提交折叠为一次 Agent 执行，同键异参明确返回冲突。
+- 异步任务编排：独立任务 REST API 返回 `202 Accepted`，后台执行七步 Agent，支持状态轮询、同键重放、有界线程池/队列和安全失败快照。
 - RAG：Markdown/Text 解析、段落切分、重叠窗口、向量化、入库、余弦相似度检索和元数据过滤。
 - 业务工具：保单、报价、历史核保、查勘报告、灾害风险和规则校验六类工具，共用统一注册表与审计轨迹。
 - 分级故障策略：关键业务资料失败立即终止；灾害外部数据源可安全降级为未知，但强制提升到人工复核并保留结构化告警。
@@ -30,7 +31,7 @@
 - 中文核保报告：把已保存的单次评估导出为 Markdown，完整保留结论、规则、证据、七步轨迹、工具记录和模型元数据。
 - 人工复核闭环：核保人可确认、推翻或要求补充资料；复核记录原子创建、不可覆盖，并进入报告和反馈导出接口。
 - 可选重启恢复：`persistent-demo` Profile 把会话、评估和人工复核切换到 H2 文件库，进程重启后仍可查询；默认 Profile 继续使用内存仓储。
-- 运行指标：Actuator 暴露评估提交、执行耗时、决策分布、安全降级、人工复核分布和复核时延六组低基数 Micrometer 指标。
+- 运行指标：Actuator 暴露评估、降级、人工复核和异步任务九组低基数 Micrometer 指标。
 
 ## 快速启动
 
@@ -65,6 +66,33 @@ curl --fail http://localhost:8080/actuator/metrics/underwriting.evaluation.decis
 
 幂等记录默认在单实例内保留 24 小时，最多 1,000 条；可通过 `IDEMPOTENCY_RETENTION` 和
 `IDEMPOTENCY_MAX_ENTRIES` 调整。失败执行不会占用键，因此调用方可以使用原键重试。
+
+### 异步任务编排
+
+同步评估接口适合交互式请求；如果模型或内部系统响应较慢，可提交异步任务并轮询状态：
+
+```bash
+task_json=$(curl -sS --fail-with-body \
+  -X POST http://localhost:8080/api/v1/underwriting/tasks \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: interview-task-001' \
+  -d '{"policyNo":"P-1001","question":"异步分析这张仓库保单。"}')
+
+task_id=$(printf '%s' "$task_json" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl --fail "http://localhost:8080/api/v1/underwriting/tasks/${task_id}" \
+  | python3 -m json.tool
+```
+
+首次提交返回 `202 Accepted` 和任务 `Location`；状态按 `PENDING → RUNNING → SUCCEEDED/FAILED`
+单向转换。成功任务给出 `evaluationId`，可继续读取评估和报告；失败任务只返回受控 `errorCode/message`，
+不会把任意异常堆栈暴露给客户端。相同幂等键和载荷返回原任务及 `Idempotency-Replayed: true`；同键异参
+返回 `409`。
+
+执行器默认核心线程 2、最大线程 4、队列 100，任务记录最多保留 1,000 条、完成后保留 24 小时；可通过
+`TASK_CORE_POOL_SIZE`、`TASK_MAX_POOL_SIZE`、`TASK_QUEUE_CAPACITY`、`TASK_MAX_ENTRIES` 和
+`TASK_RETENTION` 调整。达到执行器或记录容量时明确返回 `503`，不会无界创建线程或堆积任务。
 
 ### 安全降级演示
 
@@ -146,7 +174,7 @@ SPRING_PROFILES_ACTIVE=persistent-demo mvn spring-boot:run
 ```
 
 这个 Profile 是“可证明跨进程持久化”的本地适配器，不是生产数据库方案。它只持久化会话、评估和人工复核；
-知识库、Prompt 版本和 `Idempotency-Key` 注册表仍在内存中。生产环境应改用 PostgreSQL/Redis、Flyway
+知识库、Prompt 版本、异步任务状态和 `Idempotency-Key` 注册表仍在内存中。生产环境应改用 PostgreSQL/Redis、Flyway
 版本化迁移、事务/乐观锁、追加式复核事件和多节点幂等，不应直接把 H2 文件放到多实例服务中共享。
 
 浏览器访问：
@@ -250,6 +278,7 @@ src/main/java/com/hrniux/underwriting
 ├── review     # 人工复核结果、关系分类、原子仓库与反馈指标
 ├── rule       # 确定性规则、风险分与决策下限
 ├── session    # 会话和消息
+├── task       # 异步任务状态机、有界执行器与任务提交幂等
 ├── tool       # 虚构内部系统、注册表、MCP 工具
 └── shared     # 配置、统一异常和持久化 JSON 编解码
 ```
@@ -272,7 +301,7 @@ src/main/java/com/hrniux/underwriting
 | Hash Embedding | 企业 Embedding 模型或合规云模型 |
 | 内存向量库 | PostgreSQL + PGVector、Milvus 或 Elasticsearch |
 | JSON 场景仓库 + 分级失败工具 | 带超时/熔断/舱壁和明确异常分类的内部 REST/gRPC/MQ 适配器 |
-| 单机同步编排 + 单实例幂等单飞 | 状态机/工作流引擎、消息队列、Redis/数据库幂等记录、超时补偿 |
+| 单机有界异步任务 + 单实例幂等 | 持久化状态机/工作流引擎、消息队列、跨节点幂等、超时取消与补偿 |
 | 环境变量密钥 | Vault/KMS、短期凭证、密钥轮转和出口网关 |
 | Micrometer 单实例指标 | Prometheus Registry、OpenTelemetry Trace、模型成本与召回质量看板 |
 
