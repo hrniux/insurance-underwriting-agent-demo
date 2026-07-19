@@ -6,6 +6,27 @@
 export BASE_URL=http://localhost:8080
 ```
 
+## 可选持久化启动与重启读取
+
+普通 `mvn spring-boot:run` 使用内存仓储。需要让会话、评估和人工复核跨进程重启保留时：
+
+```bash
+SPRING_PROFILES_ACTIVE=persistent-demo mvn spring-boot:run
+```
+
+应用会在 `data/underwriting.mv.db` 创建 H2 文件。先按后文示例创建评估和人工复核，保存返回的
+`evaluation_id`，停止并以相同 Profile 重启，再执行：
+
+```bash
+curl -sS "$BASE_URL/api/v1/underwriting/evaluations/${evaluation_id}" | python3 -m json.tool
+curl -sS "$BASE_URL/api/v1/underwriting/evaluations/${evaluation_id}/review" | python3 -m json.tool
+curl -sS "$BASE_URL/api/v1/underwriting/evaluations/${evaluation_id}/report"
+```
+
+`PERSISTENT_DB_URL` 可以覆盖文件位置，例如
+`jdbc:h2:file:/tmp/underwriting-demo;DB_CLOSE_ON_EXIT=FALSE`。该 Profile 不持久化知识库、Prompt 和
+`Idempotency-Key` 注册表，也不代替生产 PostgreSQL/Flyway/事务方案。
+
 ## 健康、OpenAPI 与 Swagger
 
 ```bash

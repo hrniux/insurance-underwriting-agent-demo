@@ -24,7 +24,7 @@
 
 ### 第 4–5 分钟：讲可靠性与生产化
 
-说明 `Idempotency-Key` 如何合并并发重复请求；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线；展示评估与人工复核六组 Actuator 指标，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
+说明 `Idempotency-Key` 如何合并并发重复请求；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线；再切到 `persistent-demo` 说明仓储端口不变、重启后仍能读到评估与复核。展示六组 Actuator 指标后，给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
 
 ## 简历职责如何映射到代码
 
@@ -39,6 +39,7 @@
 | 幂等、并发单飞与运行指标 | `EvaluationSubmissionService`、`Idempotency-Key`、Actuator Metrics |
 | 内部系统故障分级与安全降级 | `ToolCriticality`、`ToolAttempt`、`DegradationNotice`、`degraded-demo` Profile |
 | 人工复核与 Agent 效果反馈闭环 | `HumanReviewService`、`HumanReviewRepository`、Review API、人工复核指标 |
+| 会话、评估与复核的重启恢复 | `persistent-demo`、三个 `Jdbc*Repository`、H2 Schema、Repository 端口隔离 |
 
 ## 常见面试问题
 
@@ -102,10 +103,15 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提
 
 后端直接接收 `UnderwritingEvaluation` 和可选 `HumanReview`，因此 REST、浏览器和未来批处理可以复用同一口径，也能用单元测试验证中文标签、空数据和 Markdown 转义。Markdown 无需字体和分页依赖，适合代码仓库、评审和面试；前端只绑定下载地址，不复制领域格式。PDF 可以在生产上作为后续渲染层，但不应让演示项目先承担额外复杂度。`GET /api/v1/underwriting/evaluations/{evaluationId}/report` 只读取已保存结果与复核记录，不会重复执行模型或规则。
 
+### Q16：为什么持久化 Demo 选择 H2 和聚合 JSON，而不是直接上 PostgreSQL？
+
+目标是用一个可离线、可自动建表、可真实重启验证的适配器说明 Repository 端口和数据库约束，避免让面试者先安装中间件。表中把主键、关联键、时间和唯一约束结构化，完整不可变聚合保存为 JSON CLOB，既能恢复所有步骤/证据/轨迹，又控制了 Demo 代码量。代价是查询分析能力、迁移治理和多实例能力有限；生产会换 PostgreSQL 的 JSONB/结构化字段、Flyway、事务与 Outbox，不会共享 H2 文件。测试同时断言默认 Profile 选择内存实现、`persistent-demo` 选择 JDBC 实现，并覆盖 JSON 往返和不可覆盖复核。
+
 ## 容易被追问的取舍
 
 - Hash Embedding 是演示替身，不应包装成生产语义模型。
-- 当前仓库是内存实现，重启丢失；重点是接口隔离与流程。
+- 默认仓库是内存实现；可选 H2 Profile 能演示重启恢复，但不是生产数据库架构。
+- H2 Profile 尚未覆盖知识库、Prompt 和幂等注册表，也没有生产级迁移、跨聚合事务或多节点协调。
 - 人工复核使用演示人员编号且没有 RBAC/电子签名，不能冒充真实授权审批。
 - 规则阈值和条款均为虚构，不代表真实公司规则。
 - Agent 自动化的是辅助决策，不是绕过人工授权。

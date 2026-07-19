@@ -8,6 +8,7 @@
 
 - Java 21、Maven
 - Spring Boot 4.1、Spring MVC、Bean Validation、Actuator
+- Spring JDBC、可选 H2 文件数据库 Profile
 - Spring AI 2.0 MCP Server，Streamable HTTP `/mcp`
 - OpenAI-compatible `/v1/chat/completions` 模型适配器
 - springdoc OpenAPI / Swagger UI
@@ -28,6 +29,7 @@
 - 中文交互演示：无需复制命令即可选择四组虚构场景，运行真实核保并阅读规则、证据和七步轨迹。
 - 中文核保报告：把已保存的单次评估导出为 Markdown，完整保留结论、规则、证据、七步轨迹、工具记录和模型元数据。
 - 人工复核闭环：核保人可确认、推翻或要求补充资料；复核记录原子创建、不可覆盖，并进入报告和反馈导出接口。
+- 可选重启恢复：`persistent-demo` Profile 把会话、评估和人工复核切换到 H2 文件库，进程重启后仍可查询；默认 Profile 继续使用内存仓储。
 - 运行指标：Actuator 暴露评估提交、执行耗时、决策分布、安全降级、人工复核分布和复核时延六组低基数 Micrometer 指标。
 
 ## 快速启动
@@ -111,6 +113,41 @@ curl --fail http://localhost:8080/actuator/metrics/underwriting.human.reviews
 
 同一评估第二次提交会返回 `409 HUMAN_REVIEW_ALREADY_EXISTS`，避免覆盖审计结论。重新下载该评估的
 Markdown 报告即可看到 Agent 辅助建议与人工最终处理的并列记录。
+
+### 可选文件数据库与重启恢复
+
+默认启动仍是最简单的内存模式，不需要数据库。需要在面试中演示“应用进程重启后评估和人工复核仍存在”时，
+启用 `persistent-demo` Profile：
+
+```bash
+SPRING_PROFILES_ACTIVE=persistent-demo mvn spring-boot:run
+```
+
+首次运行会自动创建 `data/underwriting.mv.db` 及三张表。运行 `bash scripts/demo.sh` 生成评估和人工复核后，
+停止应用并使用同一命令重新启动，再读取脚本输出中的评估编号：
+
+```bash
+curl --fail \
+  http://localhost:8080/api/v1/underwriting/evaluations/EVAL-替换为真实编号 \
+  | python3 -m json.tool
+
+curl --fail \
+  http://localhost:8080/api/v1/underwriting/evaluations/EVAL-替换为真实编号/review \
+  | python3 -m json.tool
+```
+
+也可用环境变量指定数据库文件或账号：
+
+```bash
+export PERSISTENT_DB_URL='jdbc:h2:file:/tmp/underwriting-demo;DB_CLOSE_ON_EXIT=FALSE'
+export PERSISTENT_DB_USERNAME=sa
+export PERSISTENT_DB_PASSWORD=''
+SPRING_PROFILES_ACTIVE=persistent-demo mvn spring-boot:run
+```
+
+这个 Profile 是“可证明跨进程持久化”的本地适配器，不是生产数据库方案。它只持久化会话、评估和人工复核；
+知识库、Prompt 版本和 `Idempotency-Key` 注册表仍在内存中。生产环境应改用 PostgreSQL/Redis、Flyway
+版本化迁移、事务/乐观锁、追加式复核事件和多节点幂等，不应直接把 H2 文件放到多实例服务中共享。
 
 浏览器访问：
 
@@ -214,7 +251,7 @@ src/main/java/com/hrniux/underwriting
 ├── rule       # 确定性规则、风险分与决策下限
 ├── session    # 会话和消息
 ├── tool       # 虚构内部系统、注册表、MCP 工具
-└── shared     # 配置和统一异常
+└── shared     # 配置、统一异常和持久化 JSON 编解码
 ```
 
 进一步阅读：
@@ -226,12 +263,12 @@ src/main/java/com/hrniux/underwriting
 
 ## 生产化演进
 
-这个项目有意把端口与内存实现分开，便于说明生产改造路线：
+这个项目有意把端口与内存/JDBC 实现分开，便于说明生产改造路线：
 
 | Demo 实现 | 生产替换方向 |
 |---|---|
-| 内存会话/评估仓库 | Redis 会话 + PostgreSQL 审计与评估表 |
-| 单条不可覆盖的内存复核记录 | PostgreSQL 追加式复核事件、RBAC 与电子签名 |
+| 默认内存仓储；可选 H2 聚合 JSON 仓储 | Redis 会话 + PostgreSQL 结构化审计与评估表、Flyway |
+| H2 唯一键保护的单条不可覆盖复核 | PostgreSQL 追加式复核事件、RBAC、电子签名与事务 |
 | Hash Embedding | 企业 Embedding 模型或合规云模型 |
 | 内存向量库 | PostgreSQL + PGVector、Milvus 或 Elasticsearch |
 | JSON 场景仓库 + 分级失败工具 | 带超时/熔断/舱壁和明确异常分类的内部 REST/gRPC/MQ 适配器 |

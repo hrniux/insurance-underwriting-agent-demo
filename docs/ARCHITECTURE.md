@@ -37,10 +37,18 @@ flowchart LR
     Router --> Mock["Deterministic Mock"]
     Router --> Compatible["OpenAI-compatible Gateway"]
     Agent --> Evaluation["EvaluationRepository"]
+    Session --> SessionRepository["SessionRepository"]
     ReviewAPI --> ReviewService["HumanReviewService"]
     ReviewService --> Evaluation
     ReviewService --> ReviewRepository["HumanReviewRepository"]
     ReviewService --> Metrics
+    SessionRepository --> MemoryAdapters["默认：内存适配器"]
+    Evaluation --> MemoryAdapters
+    ReviewRepository --> MemoryAdapters
+    SessionRepository --> JdbcAdapters["persistent-demo：JDBC 适配器"]
+    Evaluation --> JdbcAdapters
+    ReviewRepository --> JdbcAdapters
+    JdbcAdapters --> H2["H2 文件数据库"]
 ```
 
 ### 静态演示层
@@ -179,9 +187,33 @@ MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/m
 标签不包含人员编号、评估编号或保单号。`GET /api/v1/underwriting/reviews` 可作为本地反馈导出入口；
 生产环境必须增加机构权限、脱敏、用途审批和数据留存控制，不能直接把原始业务记录送去训练模型。
 
-## 11. 一致性与生产演进
+## 11. 可选持久化 Profile
 
-Demo 仓库使用 `ConcurrentHashMap`、不可变 record、复制后返回和单实例幂等单飞，避免最明显的并发修改与重复提交问题。真正生产化还需要：
+业务服务只依赖 `SessionRepository`、`EvaluationRepository` 和 `HumanReviewRepository` 端口，具体实现由
+Spring Profile 选择：
+
+| 启动方式 | 仓储实现 | 生命周期 | 适合场景 |
+|---|---|---|---|
+| 默认 Profile | 三个 `InMemory*Repository` | 进程退出即释放 | 最快的离线学习、测试和浏览器演示 |
+| `persistent-demo` | 三个 `Jdbc*Repository` | H2 文件保留，进程重启可恢复 | 面试演示持久化边界与适配器替换 |
+
+三个 JDBC 适配器分别是 `JdbcSessionRepository`、`JdbcEvaluationRepository` 和
+`JdbcHumanReviewRepository`；切换 Profile 不会改变业务服务和控制器的依赖类型。
+
+`persistent-demo-schema.sql` 创建会话、评估、人工复核三张表。表中保留用于主键、关联、唯一约束和排序的
+结构化列，同时把不可变领域聚合序列化为 JSON CLOB；因此新增返回字段时不需要立刻扩充大量 Demo 列，
+读取时又能还原完整步骤、证据、工具轨迹和模型元数据。人工复核表以 `evaluation_id` 为主键并引用评估表，
+数据库约束和 `DuplicateKeyException` 映射共同保证“首条复核成功，后续返回冲突”。
+
+这个设计刻意控制在教学规模。H2 文件不适合容器多副本共享，聚合 JSON 不适合复杂报表，初始化 SQL 也没有
+生产迁移历史；会话、评估和人工复核的多次写入目前不是一个跨聚合事务。生产演进应使用 PostgreSQL JSONB/
+结构化字段、Flyway、事务边界、乐观锁或 Outbox，并把更正建模成追加事件。知识库、Prompt 和幂等注册表仍是
+内存实现，也需要分别迁移到向量数据库、配置中心和 Redis/数据库。
+
+## 12. 一致性与生产演进
+
+默认仓库使用 `ConcurrentHashMap`、不可变 record、复制后返回和单实例幂等单飞；可选 JDBC 仓库增加文件级
+重启恢复、外键和唯一键约束。真正生产化还需要：
 
 - 会话版本号、跨节点幂等记录和数据库事务；
 - 分布式锁或工作流实例级串行；
@@ -190,13 +222,13 @@ Demo 仓库使用 `ConcurrentHashMap`、不可变 record、复制后返回和单
 - 租户隔离、RBAC、脱敏、全链路审计和数据留存策略；
 - Prompt/模型灰度、离线评测集、召回指标和经过审批的脱敏反馈样本集。
 
-## 12. 主要扩展点
+## 13. 主要扩展点
 
 | 接口 | 当前实现 | 可替换实现 |
 |---|---|---|
-| `SessionRepository` | 内存 | Redis / PostgreSQL |
-| `EvaluationRepository` | 内存 | PostgreSQL / 审计仓库 |
-| `HumanReviewRepository` | 内存、单评估原子创建 | PostgreSQL 追加事件 / 工作流任务库 |
+| `SessionRepository` | 默认内存 / 可选 H2 JDBC | Redis / PostgreSQL |
+| `EvaluationRepository` | 默认内存 / 可选 H2 JDBC | PostgreSQL / 审计仓库 |
+| `HumanReviewRepository` | 默认内存 / 可选 H2 唯一键 | PostgreSQL 追加事件 / 工作流任务库 |
 | `EmbeddingService` | Hash | 企业 Embedding API |
 | `VectorStore` | 内存 | PGVector / Milvus |
 | `UnderwritingFactTools` | JSON 场景仓库 | 内部 REST/gRPC/MQ 适配器 |

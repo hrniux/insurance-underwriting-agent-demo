@@ -5,9 +5,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("!persistent-demo")
 public class InMemoryEvaluationRepository implements EvaluationRepository {
 
     private final ConcurrentHashMap<String, UnderwritingEvaluation> evaluations = new ConcurrentHashMap<>();

@@ -330,7 +330,7 @@ mvn -Dtest=DemoScenarioRepositoryTest,UnderwritingRuleEngineTest test
 
 ### 下载报告会再执行一次核保吗？
 
-不会。`GET /api/v1/underwriting/evaluations/{evaluationId}/report` 只读取指定的已保存评估及可选人工复核记录并格式化内容。它没有业务副作用；如果应用重启导致内存评估丢失，接口会返回 `EVALUATION_NOT_FOUND`，需要重新创建评估。
+不会。`GET /api/v1/underwriting/evaluations/{evaluationId}/report` 只读取指定的已保存评估及可选人工复核记录并格式化内容。它没有业务副作用。默认 Profile 重启后内存评估会丢失并返回 `EVALUATION_NOT_FOUND`；启用 `persistent-demo` 时，会话、评估和人工复核保存在 H2 文件中，可在进程重启后继续读取。
 
 ### 为什么人工复核不能再次覆盖？
 

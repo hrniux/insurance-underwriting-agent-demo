@@ -25,6 +25,8 @@ class DocumentationContractTest {
                 "src/main/resources/static/demo/index.html",
                 "src/main/resources/static/demo/app.js",
                 "src/main/resources/static/demo/styles.css",
+                "src/main/resources/application-persistent-demo.yml",
+                "src/main/resources/db/persistent-demo-schema.sql",
                 "Dockerfile",
                 ".dockerignore");
 
@@ -241,6 +243,32 @@ class DocumentationContractTest {
         assertThat(read("scripts/demo.sh")).contains(
                 "[6/9] 人工复核反馈闭环",
                 "underwriting.human.reviews");
+    }
+
+    @Test
+    void documentsTheOptionalRestartPersistentProfileAndItsBoundaries() throws IOException {
+        assertThat(read("README.md")).contains(
+                "persistent-demo",
+                "data/underwriting.mv.db",
+                "PERSISTENT_DB_URL",
+                "知识库、Prompt 版本和 `Idempotency-Key` 注册表仍在内存中");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "JdbcSessionRepository",
+                "JdbcEvaluationRepository",
+                "JdbcHumanReviewRepository",
+                "persistent-demo-schema.sql",
+                "Flyway",
+                "Outbox");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "SPRING_PROFILES_ACTIVE=persistent-demo",
+                "${evaluation_id}/review");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "### Q16",
+                "JSON CLOB",
+                "跨聚合事务");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "默认 Profile 重启后内存评估会丢失",
+                "H2 文件");
     }
 
     private String read(String path) throws IOException {
