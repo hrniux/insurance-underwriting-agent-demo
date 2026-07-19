@@ -2,6 +2,10 @@
 
 const SCENARIO_API = "/api/v1/demo/scenarios";
 const EVALUATION_API = "/api/v1/underwriting/evaluations";
+const HEALTH_API = "/actuator/health";
+const HISTORY_KEY = "underwriting-demo-history-v1";
+const THEME_KEY = "underwriting-demo-theme";
+const MAX_HISTORY_ITEMS = 8;
 
 const state = {
   scenarios: [],
@@ -13,7 +17,13 @@ const state = {
   evaluationController: null,
   reviewController: null,
   comparisonController: null,
-  comparisonResults: []
+  comparisonResults: [],
+  scenarioFilter: "ALL",
+  evaluationStartedAt: 0,
+  lastDurationMs: 0,
+  pipelineTimer: null,
+  history: [],
+  toastTimer: null
 };
 
 const LABELS = {
@@ -139,6 +149,16 @@ const FACT_GROUPS = [
   ]]
 ];
 
+const PIPELINE_STEPS = [
+  "QUESTION_UNDERSTANDING",
+  "BUSINESS_DATA_COLLECTION",
+  "KNOWLEDGE_RETRIEVAL",
+  "RISK_ANALYSIS",
+  "RULE_VALIDATION",
+  "RECOMMENDATION_GENERATION",
+  "RESULT_PERSISTENCE"
+];
+
 function find(selector) {
   return document.querySelector(selector);
 }
@@ -176,6 +196,72 @@ function setChildren(target, children) {
   target.replaceChildren(...children.filter(Boolean));
 }
 
+function storageRead(storage, key, fallback) {
+  try {
+    const value = storage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function storageWrite(storage, key, value) {
+  try {
+    storage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    // Storage can be unavailable in private browsing; the workbench still functions in memory.
+  }
+}
+
+function showToast(message) {
+  const toast = find("#toast");
+  window.clearTimeout(state.toastTimer);
+  toast.textContent = text(message);
+  toast.hidden = false;
+  state.toastTimer = window.setTimeout(() => {
+    toast.hidden = true;
+  }, 2800);
+}
+
+function preferredTheme() {
+  const stored = storageRead(localStorage, THEME_KEY, null);
+  if (stored === "dark" || stored === "light") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  const button = find("#theme-toggle");
+  button.setAttribute("aria-pressed", String(isDark));
+  button.title = isDark ? "切换浅色模式" : "切换深色模式";
+  find("#theme-icon").textContent = isDark ? "☀" : "◐";
+}
+
+function toggleTheme() {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme(theme);
+  storageWrite(localStorage, THEME_KEY, theme);
+}
+
+async function checkServiceHealth() {
+  const status = find("#service-status");
+  const statusText = find("#service-status-text");
+  const startedAt = performance.now();
+  try {
+    const health = await requestJson(HEALTH_API);
+    const latency = Math.max(0, Math.round(performance.now() - startedAt));
+    const isUp = health?.status === "UP";
+    status.dataset.status = isUp ? "UP" : "DOWN";
+    statusText.textContent = isUp ? `服务正常 · ${latency} ms` : "服务状态异常";
+    status.title = statusText.textContent;
+  } catch (error) {
+    status.dataset.status = "DOWN";
+    statusText.textContent = "服务不可用";
+    status.title = text(error.message);
+  }
+}
+
 async function requestJson(url, options = {}) {
   const { headers = {}, ...requestOptions } = options;
   const response = await fetch(url, {
@@ -203,6 +289,7 @@ async function requestJson(url, options = {}) {
 function createScenarioButton(scenario) {
   const button = el("button", "scenario-card");
   button.type = "button";
+  button.dataset.decision = text(scenario.expectedResult?.decision, "UNKNOWN");
   button.setAttribute("aria-pressed", String(scenario.policyNo === state.selectedPolicyNo));
   button.append(
     el("span", "scenario-card__code", scenario.policyNo),
@@ -219,9 +306,22 @@ function createScenarioButton(scenario) {
 }
 
 function renderScenarioButtons() {
-  const buttons = state.scenarios.map(createScenarioButton);
+  const visibleScenarios = state.scenarioFilter === "ALL"
+    ? state.scenarios
+    : state.scenarios.filter(scenario => scenario.expectedResult?.decision === state.scenarioFilter);
+  const buttons = visibleScenarios.map(createScenarioButton);
   setChildren(find("#scenario-list"), buttons);
-  find("#scenario-status").textContent = `已载入 ${buttons.length} 组虚构场景。`;
+  find("#scenario-status").textContent = state.scenarioFilter === "ALL"
+    ? `已载入 ${buttons.length} 组虚构场景。`
+    : `筛选出 ${buttons.length} 组${label("decisions", state.scenarioFilter)}场景。`;
+}
+
+function setScenarioFilter(filter) {
+  state.scenarioFilter = filter;
+  document.querySelectorAll("#scenario-filters [data-filter]").forEach(button => {
+    button.setAttribute("aria-pressed", String(button.dataset.filter === filter));
+  });
+  renderScenarioButtons();
 }
 
 function createFactGroup(title, entries) {
@@ -237,7 +337,8 @@ function createFactGroup(title, entries) {
 function renderScenarioDetail(detail) {
   find("#scenario-title").textContent = text(detail.name);
   find("#scenario-summary").textContent = text(detail.summary);
-  find("#question-text").textContent = `核保问题：${text(detail.question)}`;
+  find("#question-input").value = text(detail.question, "");
+  updateQuestionCount();
 
   const expected = find("#expected-decision");
   expected.className = "decision-badge";
@@ -257,6 +358,19 @@ function renderScenarioDetail(detail) {
   find("#scenario-detail").hidden = false;
   find("#detail-status").hidden = true;
   find("#run-evaluation").disabled = false;
+}
+
+function updateQuestionCount() {
+  const input = find("#question-input");
+  find("#question-count").textContent = `${input.value.length} / 500`;
+  find("#run-evaluation").disabled = !state.detail || !input.value.trim() || Boolean(state.evaluationController);
+}
+
+function resetQuestion() {
+  if (!state.detail) return;
+  find("#question-input").value = text(state.detail.question, "");
+  updateQuestionCount();
+  showToast("已恢复当前场景的默认核保问题");
 }
 
 function renderDecisionSummary(evaluation, expected) {
@@ -477,6 +591,234 @@ function renderToolTraces(items) {
   setChildren(find("#tool-trace-list"), [section]);
 }
 
+function renderResultMetrics(evaluation, durationMs) {
+  const tools = Array.isArray(evaluation.toolTraces) ? evaluation.toolTraces : [];
+  const successfulTools = tools.filter(item => item.status === "SUCCESS" || item.status === "DEGRADED").length;
+  const model = evaluation.modelResponse;
+  const metrics = [
+    ["端到端耗时", `${Math.max(0, durationMs)} ms`],
+    ["业务工具", `${successfulTools}/${tools.length} 可用`],
+    ["规则命中", `${evaluation.ruleHits?.length || 0} 条`],
+    ["知识证据", `${evaluation.evidence?.length || 0} 条`],
+    ["模型路由", `${text(model?.provider)} / ${text(model?.model)}`]
+  ];
+  setChildren(find("#result-metrics"), metrics.map(([title, value]) => {
+    const card = el("article", "result-metric");
+    card.title = value;
+    card.append(el("span", null, title), el("strong", null, value));
+    return card;
+  }));
+}
+
+function activateResultTab(tabName, focus = false) {
+  document.querySelectorAll("#result-tabs [data-tab]").forEach(button => {
+    const active = button.dataset.tab === tabName;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    if (active && focus) button.focus();
+  });
+  document.querySelectorAll("[data-result-panel]").forEach(panel => {
+    panel.hidden = panel.dataset.resultPanel !== tabName;
+  });
+}
+
+function handleTabKeydown(event) {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const tabs = [...document.querySelectorAll("#result-tabs [data-tab]")];
+  const current = tabs.indexOf(event.target);
+  if (current < 0) return;
+  event.preventDefault();
+  const direction = event.key === "ArrowRight" ? 1 : -1;
+  const next = tabs[(current + direction + tabs.length) % tabs.length];
+  activateResultTab(next.dataset.tab, true);
+}
+
+function pipelineTraceMap(evaluation) {
+  return new Map((evaluation?.stepTraces || []).map(trace => [trace.step, trace]));
+}
+
+function renderLivePipeline(statusForStep) {
+  const steps = PIPELINE_STEPS.map((step, index) => {
+    const status = statusForStep(step, index);
+    const item = el("li", "live-pipeline__step");
+    item.dataset.status = text(status.status, "PENDING");
+    item.append(
+      el("strong", null, label("steps", step)),
+      el("span", null, status.detail || "等待执行")
+    );
+    return item;
+  });
+  setChildren(find("#live-pipeline-steps"), steps);
+}
+
+function stopPipelineTimer() {
+  if (state.pipelineTimer) {
+    window.clearInterval(state.pipelineTimer);
+    state.pipelineTimer = null;
+  }
+}
+
+function startLivePipeline() {
+  stopPipelineTimer();
+  state.evaluationStartedAt = performance.now();
+  const panel = find("#live-pipeline");
+  panel.hidden = false;
+
+  const update = () => {
+    const elapsed = Math.max(0, Math.round(performance.now() - state.evaluationStartedAt));
+    const activeIndex = Math.min(PIPELINE_STEPS.length - 1, Math.floor(elapsed / 320));
+    find("#pipeline-elapsed").textContent = `${elapsed} ms`;
+    find("#pipeline-caption").textContent = `正在执行：${label("steps", PIPELINE_STEPS[activeIndex])}。页面展示等待进度，完成后以服务端真实轨迹覆盖。`;
+    renderLivePipeline((step, index) => ({
+      status: index < activeIndex ? "SUCCESS" : index === activeIndex ? "ACTIVE" : "PENDING",
+      detail: index < activeIndex ? "已提交" : index === activeIndex ? "执行中" : "等待执行"
+    }));
+  };
+  update();
+  state.pipelineTimer = window.setInterval(update, 160);
+}
+
+function completeLivePipeline(evaluation, durationMs) {
+  stopPipelineTimer();
+  find("#live-pipeline").hidden = false;
+  const traces = pipelineTraceMap(evaluation);
+  find("#pipeline-elapsed").textContent = `${durationMs} ms`;
+  find("#pipeline-caption").textContent = "服务端真实执行轨迹已返回；每一步的状态与耗时均来自本次评估结果。";
+  renderLivePipeline(step => {
+    const trace = traces.get(step);
+    return {
+      status: trace?.status || "SUCCESS",
+      detail: trace ? `${label("statuses", trace.status)} · ${text(trace.durationMs, "0")} ms` : "已完成"
+    };
+  });
+}
+
+function failLivePipeline(message) {
+  stopPipelineTimer();
+  const elapsed = Math.max(0, Math.round(performance.now() - state.evaluationStartedAt));
+  find("#pipeline-elapsed").textContent = `${elapsed} ms`;
+  find("#pipeline-caption").textContent = `执行中断：${text(message)}`;
+  renderLivePipeline((step, index) => ({
+    status: index === 0 ? "FAILED" : "PENDING",
+    detail: index === 0 ? "请求失败" : "未执行"
+  }));
+}
+
+function historyFromStorage() {
+  const items = storageRead(sessionStorage, HISTORY_KEY, []);
+  return Array.isArray(items) ? items.slice(0, MAX_HISTORY_ITEMS) : [];
+}
+
+function persistHistory() {
+  storageWrite(sessionStorage, HISTORY_KEY, state.history);
+}
+
+function renderHistory() {
+  const empty = find("#history-empty");
+  const clearButton = find("#clear-history");
+  empty.hidden = state.history.length > 0;
+  clearButton.disabled = state.history.length === 0;
+  const buttons = state.history.map(item => {
+    const button = el("button", "history-item");
+    button.type = "button";
+    button.title = `恢复评估 ${text(item.id)}`;
+    button.append(
+      el("strong", null, `${text(item.policyNo)} · ${text(item.scenarioName)}`),
+      el("span", null, `${text(item.displayTime)} · ${text(item.durationMs, "0")} ms`),
+      el("span", "history-item__decision", label("decisions", item.evaluation?.decision))
+    );
+    button.addEventListener("click", () => restoreHistory(item.id));
+    return button;
+  });
+  setChildren(find("#history-list"), buttons);
+}
+
+function recordHistory(evaluation, durationMs) {
+  const scenario = state.scenarios.find(item => item.policyNo === evaluation.policyNo);
+  const now = new Date();
+  const entry = {
+    id: evaluation.id,
+    policyNo: evaluation.policyNo,
+    scenarioName: scenario?.name || evaluation.policyNo,
+    displayTime: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    durationMs,
+    evaluation,
+    review: null
+  };
+  state.history = [entry, ...state.history.filter(item => item.id !== evaluation.id)].slice(0, MAX_HISTORY_ITEMS);
+  persistHistory();
+  renderHistory();
+}
+
+function updateHistoryReview(review) {
+  const item = state.history.find(entry => entry.id === state.evaluation?.id);
+  if (!item) return;
+  item.review = review;
+  persistHistory();
+}
+
+async function restoreHistory(evaluationId) {
+  const item = state.history.find(entry => entry.id === evaluationId);
+  if (!item) return;
+  if (state.selectedPolicyNo !== item.policyNo || !state.detail) {
+    await selectScenario(item.policyNo);
+  }
+  if (state.detail?.policyNo !== item.policyNo) return;
+  state.evaluation = item.evaluation;
+  state.lastDurationMs = item.durationMs;
+  renderEvaluation(item.evaluation, state.detail.expectedResult, item.durationMs, {
+    record: false,
+    review: item.review
+  });
+  showToast(`已恢复评估 ${item.id}`);
+}
+
+function clearHistory() {
+  state.history = [];
+  persistHistory();
+  renderHistory();
+  showToast("本次会话记录已清空");
+}
+
+function evaluationSummaryText() {
+  const evaluation = state.evaluation;
+  if (!evaluation) return "";
+  return [
+    `保单：${evaluation.policyNo}`,
+    `结论：${label("decisions", evaluation.decision)}`,
+    `风险：${label("risks", evaluation.riskLevel)}（${evaluation.riskScore}/100）`,
+    `摘要：${evaluation.summary}`,
+    `评估编号：${evaluation.id}`,
+    `会话编号：${evaluation.sessionId}`
+  ].join("\n");
+}
+
+async function copyEvaluationSummary() {
+  if (!state.evaluation) return;
+  try {
+    await navigator.clipboard.writeText(evaluationSummaryText());
+    showToast("核保摘要已复制到剪贴板");
+  } catch (error) {
+    showToast("浏览器未授予剪贴板权限，请使用 JSON 导出");
+  }
+}
+
+function exportEvaluationJson() {
+  if (!state.evaluation) return;
+  const payload = JSON.stringify({
+    evaluation: state.evaluation,
+    humanReview: state.review,
+    clientObservedDurationMs: state.lastDurationMs
+  }, null, 2);
+  const url = URL.createObjectURL(new Blob([payload], { type: "application/json;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `underwriting-evaluation-${state.evaluation.id}.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  showToast("核保 JSON 已导出");
+}
+
 function configureReportDownload(evaluationId) {
   const action = find("#report-action");
   const link = find("#download-report");
@@ -528,6 +870,7 @@ function renderHumanReview(review) {
   result.hidden = false;
   find("#review-form").hidden = true;
   find("#review-status").textContent = "人工复核结论已保存且不可覆盖；重新下载报告即可看到闭环记录。";
+  updateHistoryReview(review);
 }
 
 function reviewConditions() {
@@ -581,7 +924,8 @@ async function submitHumanReview(event) {
   }
 }
 
-function renderEvaluation(evaluation, expected) {
+function renderEvaluation(evaluation, expected, durationMs = 0, options = {}) {
+  const { record = true, review = null } = options;
   renderDecisionSummary(evaluation, expected);
   renderDegradations(Array.isArray(evaluation.degradations) ? evaluation.degradations : []);
   renderTextList("reason-list", "核保原因", evaluation.reasons);
@@ -593,9 +937,19 @@ function renderEvaluation(evaluation, expected) {
   renderStepTraces(Array.isArray(evaluation.stepTraces) ? evaluation.stepTraces : []);
   renderToolTraces(Array.isArray(evaluation.toolTraces) ? evaluation.toolTraces : []);
   renderHumanReviewPanel(evaluation);
+  if (review) {
+    state.review = review;
+    renderHumanReview(review);
+  }
+  renderResultMetrics(evaluation, durationMs);
+  completeLivePipeline(evaluation, durationMs);
   configureReportDownload(evaluation.id);
+  find("#copy-summary").disabled = false;
+  find("#export-json").disabled = false;
+  activateResultTab("overview");
   find("#result-content").hidden = false;
   find("#evaluation-status").textContent = `核保完成，评估编号：${text(evaluation.id)}`;
+  if (record) recordHistory(evaluation, durationMs);
   find("#result-content").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -727,8 +1081,8 @@ function setDetailLoading(loading) {
 
 function setEvaluationLoading(loading) {
   const button = find("#run-evaluation");
-  button.disabled = loading || !state.detail;
-  button.textContent = loading ? "核保 Agent 运行中……" : "运行智能核保";
+  button.disabled = loading || !state.detail || !find("#question-input").value.trim();
+  button.textContent = loading ? "核保 Agent 运行中……" : "▶ 运行智能核保";
   if (loading) {
     find("#evaluation-status").textContent = "正在执行七步核保流程，请稍候……";
   }
@@ -761,11 +1115,18 @@ function showError(message) {
 }
 
 function resetEvaluation() {
+  stopPipelineTimer();
   state.reviewController?.abort();
   state.reviewController = null;
   state.review = null;
   state.evaluation = null;
+  state.lastDurationMs = 0;
   find("#result-content").hidden = true;
+  find("#live-pipeline").hidden = true;
+  find("#live-pipeline-steps").replaceChildren();
+  find("#result-metrics").replaceChildren();
+  find("#copy-summary").disabled = true;
+  find("#export-json").disabled = true;
   find("#report-action").hidden = true;
   const reportLink = find("#download-report");
   reportLink.removeAttribute("href");
@@ -783,10 +1144,12 @@ function resetEvaluation() {
     "#reason-list",
     "#action-list",
     "#rule-hit-list",
+    "#source-snapshot",
     "#evidence-list",
     "#step-timeline",
     "#tool-trace-list"
   ].forEach(selector => find(selector).replaceChildren());
+  activateResultTab("overview");
   clearError();
   find("#evaluation-status").textContent = "尚未运行核保。";
 }
@@ -830,10 +1193,17 @@ async function runEvaluation() {
   if (!state.detail || state.evaluationController) return;
 
   const detail = state.detail;
+  const question = find("#question-input").value.trim();
+  if (!question) {
+    showToast("请先填写核保任务");
+    find("#question-input").focus();
+    return;
+  }
   const controller = new AbortController();
   state.evaluationController = controller;
   clearError();
   setEvaluationLoading(true);
+  startLivePipeline();
 
   try {
     const evaluation = await requestJson(EVALUATION_API, {
@@ -842,15 +1212,17 @@ async function runEvaluation() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         policyNo: detail.policyNo,
-        question: detail.question
+        question
       })
     });
     if (state.evaluationController !== controller || state.detail?.policyNo !== detail.policyNo) return;
     state.evaluation = evaluation;
-    renderEvaluation(evaluation, detail.expectedResult);
+    state.lastDurationMs = Math.max(0, Math.round(performance.now() - state.evaluationStartedAt));
+    renderEvaluation(evaluation, detail.expectedResult, state.lastDurationMs);
   } catch (error) {
     if (error.name !== "AbortError") {
       find("#evaluation-status").textContent = "核保运行失败，可以直接重试。";
+      failLivePipeline(error.message);
       showError(error.message);
     }
   } finally {
@@ -915,6 +1287,9 @@ async function runComparison() {
 }
 
 async function initialize() {
+  state.history = historyFromStorage();
+  renderHistory();
+  checkServiceHealth();
   try {
     const scenarios = await requestJson(SCENARIO_API);
     if (!Array.isArray(scenarios) || scenarios.length === 0) {
@@ -932,7 +1307,38 @@ async function initialize() {
   }
 }
 
+function handleGlobalShortcut(event) {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    runEvaluation();
+    return;
+  }
+  if (event.metaKey || event.ctrlKey || event.altKey || event.target.matches("input, textarea, select")) return;
+  const scenarioIndex = Number(event.key) - 1;
+  if (scenarioIndex >= 0 && scenarioIndex < state.scenarios.length) {
+    event.preventDefault();
+    selectScenario(state.scenarios[scenarioIndex].policyNo);
+  }
+}
+
+applyTheme(preferredTheme());
 find("#run-evaluation").addEventListener("click", runEvaluation);
 find("#run-comparison").addEventListener("click", runComparison);
 find("#review-form").addEventListener("submit", submitHumanReview);
+find("#question-input").addEventListener("input", updateQuestionCount);
+find("#reset-question").addEventListener("click", resetQuestion);
+find("#theme-toggle").addEventListener("click", toggleTheme);
+find("#clear-history").addEventListener("click", clearHistory);
+find("#copy-summary").addEventListener("click", copyEvaluationSummary);
+find("#export-json").addEventListener("click", exportEvaluationJson);
+find("#scenario-filters").addEventListener("click", event => {
+  const button = event.target.closest("[data-filter]");
+  if (button) setScenarioFilter(button.dataset.filter);
+});
+find("#result-tabs").addEventListener("click", event => {
+  const button = event.target.closest("[data-tab]");
+  if (button) activateResultTab(button.dataset.tab);
+});
+find("#result-tabs").addEventListener("keydown", handleTabKeydown);
+document.addEventListener("keydown", handleGlobalShortcut);
 initialize();

@@ -3,95 +3,239 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="使用四组虚构保险数据演示七步智能核保流程">
-  <title>中文智能核保演示台</title>
+  <meta name="description" content="专业化财险智能核保 Agent 决策工作台，演示 RAG、MCP 工具、规则校验与人工复核闭环">
+  <title>财险智能核保决策工作台</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+  <nav class="app-bar" aria-label="应用导航">
+    <a class="brand" href="/demo/" aria-label="返回智能核保工作台首页">
+      <span class="brand__mark" aria-hidden="true">财</span>
+      <span><strong>财险智核</strong><small>Underwriting Copilot</small></span>
+    </a>
+    <div class="app-bar__actions">
+      <span id="service-status" class="service-status" data-status="CHECKING" aria-live="polite">
+        <span class="service-status__dot" aria-hidden="true"></span>
+        <span id="service-status-text">正在检测服务</span>
+      </span>
+      <a class="nav-link" href="/swagger-ui/index.html" target="_blank" rel="noreferrer">API 文档</a>
+      <button id="theme-toggle" class="icon-button" type="button" aria-pressed="false" title="切换深色模式">
+        <span id="theme-icon" aria-hidden="true">◐</span><span class="sr-only">切换深色模式</span>
+      </button>
+    </div>
+  </nav>
+
   <header class="hero">
-    <p class="eyebrow">INSURANCE UNDERWRITING AGENT</p>
-    <h1>中文智能核保演示台</h1>
-    <p>选择一组假数据，运行真实七步 Agent 流程，并查看结论背后的规则、知识和工具轨迹。</p>
-    <p class="data-notice">本页面全部业务数据均为虚构数据，仅用于教学与面试演示。</p>
+    <div class="hero__content">
+      <p class="eyebrow">中文智能核保演示台 · INSURANCE UNDERWRITING AGENT</p>
+      <h1>从分散资料到可审计的<br>核保决策闭环</h1>
+      <p>编排业务事实、RAG 知识检索、MCP 工具和确定性规则，生成有依据、可追溯、可复核的核保建议。</p>
+      <div class="hero__capabilities" aria-label="平台核心能力">
+        <span><strong>7</strong> 步 Agent 编排</span>
+        <span><strong>6</strong> 个 MCP 业务工具</span>
+        <span><strong>4</strong> 组虚构业务场景</span>
+        <span><strong>100%</strong> 离线可演示</span>
+      </div>
+      <p class="data-notice">本页面全部业务数据均为虚构数据，仅用于教学与面试演示。</p>
+    </div>
   </header>
+
   <main id="main-content" class="workspace">
     <aside class="scenario-panel" aria-labelledby="scenario-heading">
-      <h2 id="scenario-heading">第一步：选择演示场景</h2>
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">CASE LIBRARY</p>
+          <h2 id="scenario-heading">演示场景</h2>
+        </div>
+        <span class="keyboard-hint" title="使用数字键 1–4 快速切换场景">快捷键 1–4</span>
+      </div>
       <p id="scenario-status" aria-live="polite">正在读取场景目录……</p>
+      <div id="scenario-filters" class="scenario-filters" aria-label="按预期结论筛选场景">
+        <button type="button" class="filter-chip" data-filter="ALL" aria-pressed="true">全部</button>
+        <button type="button" class="filter-chip" data-filter="APPROVE" aria-pressed="false">自动通过</button>
+        <button type="button" class="filter-chip" data-filter="MANUAL_REVIEW" aria-pressed="false">人工复核</button>
+        <button type="button" class="filter-chip" data-filter="REJECT" aria-pressed="false">拒保</button>
+      </div>
       <div id="scenario-list" class="scenario-list"></div>
       <div class="comparison-action">
         <button id="run-comparison" type="button" disabled>对比全部场景</button>
         <p id="comparison-status" aria-live="polite">场景目录加载完成后即可运行横向对比。</p>
       </div>
+
+      <section class="history-panel" aria-labelledby="history-heading">
+        <div class="history-panel__heading">
+          <h3 id="history-heading">本次会话记录</h3>
+          <button id="clear-history" class="text-button" type="button" disabled>清空</button>
+        </div>
+        <p id="history-empty" class="history-empty">完成一次核保后，可从这里快速恢复结果。</p>
+        <div id="history-list" class="history-list"></div>
+      </section>
     </aside>
+
     <section class="detail-panel" aria-labelledby="detail-heading">
-      <h2 id="detail-heading">第二步：理解投保事实</h2>
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">CASE INTAKE</p>
+          <h2 id="detail-heading">投保事实与核保任务</h2>
+        </div>
+        <span class="step-pill">01 · 案件受理</span>
+      </div>
       <div id="scenario-detail" hidden>
         <p id="expected-decision"></p>
         <h3 id="scenario-title"></h3>
         <p id="scenario-summary"></p>
-        <p id="question-text"></p>
-        <ul id="learning-points"></ul>
+
+        <div class="question-editor">
+          <div class="question-editor__heading">
+            <label for="question-input">核保任务</label>
+            <span id="question-count">0 / 500</span>
+          </div>
+          <textarea id="question-input" maxlength="500" rows="3" aria-describedby="question-help"></textarea>
+          <div class="question-editor__footer">
+            <p id="question-help">可修改问题后再运行，按 <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> 快速提交。</p>
+            <button id="reset-question" class="text-button" type="button">恢复场景问题</button>
+          </div>
+        </div>
+
+        <details class="learning-callout">
+          <summary>本场景的面试讲解重点</summary>
+          <ul id="learning-points"></ul>
+        </details>
+
+        <div class="facts-heading">
+          <h3>五类业务事实</h3>
+          <span>数据来自 MCP 工具模拟接口</span>
+        </div>
         <div id="facts-grid" class="facts-grid"></div>
-        <button id="run-evaluation" type="button" disabled>运行智能核保</button>
+        <div class="evaluation-action">
+          <div>
+            <strong>准备执行真实后端编排</strong>
+            <span>模型默认为 Mock，无需 API Key</span>
+          </div>
+          <button id="run-evaluation" type="button" disabled>
+            <span aria-hidden="true">▶</span> 运行智能核保
+          </button>
+        </div>
       </div>
       <p id="detail-status">请选择一组场景。</p>
     </section>
+
     <section class="result-panel" aria-labelledby="result-heading">
-      <h2 id="result-heading">第三步：阅读核保结论与过程</h2>
+      <div class="panel-heading result-heading">
+        <div>
+          <p class="section-kicker">DECISION WORKBENCH</p>
+          <h2 id="result-heading">核保决策工作台</h2>
+        </div>
+        <span class="step-pill">02 · Agent 决策</span>
+      </div>
       <p id="evaluation-status" aria-live="polite">尚未运行核保。</p>
       <div id="error-panel" role="alert" hidden></div>
-      <div id="result-content" hidden>
-        <div id="decision-summary"></div>
-        <div id="degradation-list"></div>
-        <section id="human-review-panel" class="human-review-panel result-section" aria-labelledby="human-review-heading" hidden>
-          <h3 id="human-review-heading">人工复核反馈闭环</h3>
-          <p id="review-guidance">记录核保人的最终处理，不覆盖 Agent 原始建议。</p>
-          <form id="review-form" class="review-form">
-            <label for="reviewer-id">复核人员编号</label>
-            <input id="reviewer-id" name="reviewerId" value="UW-DEMO-001" maxlength="64" required>
 
-            <label for="review-outcome">人工处理结论</label>
-            <select id="review-outcome" name="outcome" required>
-              <option value="APPROVED">同意承保</option>
-              <option value="REJECTED">拒绝承保</option>
-              <option value="MORE_INFORMATION_REQUIRED">要求补充资料</option>
-            </select>
-
-            <label for="review-comment">复核说明</label>
-            <textarea id="review-comment" name="comment" maxlength="1000" rows="3" required
-              placeholder="例如：整改材料已核验，同意附条件承保。"></textarea>
-
-            <label for="review-conditions">承保条件或补充资料（使用分号分隔，选填）</label>
-            <input id="review-conditions" name="conditions" maxlength="1000"
-              placeholder="例如：提高免赔额；每季度复查排水设施">
-
-            <button id="submit-review" type="submit">提交不可覆盖的复核结论</button>
-          </form>
-          <p id="review-status" aria-live="polite">尚未提交人工复核结论。</p>
-          <div id="review-result" hidden></div>
-        </section>
-        <div id="report-action" class="report-action" hidden>
-          <a id="download-report" class="report-download">下载中文 Markdown 报告</a>
-          <p>报告来自当前已保存评估和可选人工复核记录，不会重复执行模型或规则。</p>
+      <section id="live-pipeline" class="live-pipeline" aria-labelledby="pipeline-heading" hidden>
+        <div class="live-pipeline__heading">
+          <div>
+            <p class="section-kicker">LIVE ORCHESTRATION</p>
+            <h3 id="pipeline-heading">七步 Agent 执行状态</h3>
+          </div>
+          <span id="pipeline-elapsed" class="elapsed-badge">0 ms</span>
         </div>
-        <div id="reason-list"></div>
-        <div id="action-list"></div>
-        <div id="rule-hit-list"></div>
-        <div id="source-snapshot"></div>
-        <div id="evidence-list"></div>
-        <div id="step-timeline"></div>
-        <div id="tool-trace-list"></div>
+        <p id="pipeline-caption" aria-live="polite">正在等待 Agent 开始执行……</p>
+        <ol id="live-pipeline-steps" class="live-pipeline__steps"></ol>
+      </section>
+
+      <div id="result-content" hidden>
+        <div id="result-metrics" class="result-metrics" aria-label="本次核保运行指标"></div>
+
+        <div class="result-toolbar" aria-label="结果操作">
+          <div id="result-tabs" class="result-tabs" role="tablist" aria-label="核保结果分区">
+            <button id="tab-overview" type="button" role="tab" aria-selected="true" aria-controls="panel-overview" data-tab="overview">决策总览</button>
+            <button id="tab-evidence" type="button" role="tab" aria-selected="false" aria-controls="panel-evidence" data-tab="evidence" tabindex="-1">规则与证据</button>
+            <button id="tab-audit" type="button" role="tab" aria-selected="false" aria-controls="panel-audit" data-tab="audit" tabindex="-1">执行与审计</button>
+            <button id="tab-review" type="button" role="tab" aria-selected="false" aria-controls="panel-review" data-tab="review" tabindex="-1">人工复核</button>
+          </div>
+          <div class="result-actions">
+            <button id="copy-summary" class="secondary-button" type="button" disabled>复制摘要</button>
+            <button id="export-json" class="secondary-button" type="button" disabled>导出 JSON</button>
+          </div>
+        </div>
+
+        <section id="panel-overview" class="result-tab-panel" role="tabpanel" aria-labelledby="tab-overview" data-result-panel="overview">
+          <div id="decision-summary"></div>
+          <div id="degradation-list"></div>
+          <div class="overview-columns">
+            <div id="reason-list"></div>
+            <div id="action-list"></div>
+          </div>
+        </section>
+
+        <section id="panel-evidence" class="result-tab-panel" role="tabpanel" aria-labelledby="tab-evidence" data-result-panel="evidence" hidden>
+          <div id="rule-hit-list"></div>
+          <div id="source-snapshot"></div>
+          <div id="evidence-list"></div>
+        </section>
+
+        <section id="panel-audit" class="result-tab-panel" role="tabpanel" aria-labelledby="tab-audit" data-result-panel="audit" hidden>
+          <div id="step-timeline"></div>
+          <div id="tool-trace-list"></div>
+        </section>
+
+        <section id="panel-review" class="result-tab-panel" role="tabpanel" aria-labelledby="tab-review" data-result-panel="review" hidden>
+          <section id="human-review-panel" class="human-review-panel result-section" aria-labelledby="human-review-heading" hidden>
+            <h3 id="human-review-heading">人工复核反馈闭环</h3>
+            <p id="review-guidance">记录核保人的最终处理，不覆盖 Agent 原始建议。</p>
+            <form id="review-form" class="review-form">
+              <label for="reviewer-id">复核人员编号</label>
+              <input id="reviewer-id" name="reviewerId" value="UW-DEMO-001" maxlength="64" required>
+
+              <label for="review-outcome">人工处理结论</label>
+              <select id="review-outcome" name="outcome" required>
+                <option value="APPROVED">同意承保</option>
+                <option value="REJECTED">拒绝承保</option>
+                <option value="MORE_INFORMATION_REQUIRED">要求补充资料</option>
+              </select>
+
+              <label for="review-comment">复核说明</label>
+              <textarea id="review-comment" name="comment" maxlength="1000" rows="3" required
+                placeholder="例如：整改材料已核验，同意附条件承保。"></textarea>
+
+              <label for="review-conditions">承保条件或补充资料（使用分号分隔，选填）</label>
+              <input id="review-conditions" name="conditions" maxlength="1000"
+                placeholder="例如：提高免赔额；每季度复查排水设施">
+
+              <button id="submit-review" type="submit">提交不可覆盖的复核结论</button>
+            </form>
+            <p id="review-status" aria-live="polite">尚未提交人工复核结论。</p>
+            <div id="review-result" hidden></div>
+          </section>
+        </section>
+
+        <div id="report-action" class="report-action" hidden>
+          <div>
+            <strong>生成可审计交付物</strong>
+            <p>报告读取当前已保存评估和人工复核记录，不会重复执行模型或规则。</p>
+          </div>
+          <a id="download-report" class="report-download">下载中文 Markdown 报告</a>
+        </div>
       </div>
     </section>
+
     <section id="comparison-panel" class="comparison-panel" aria-labelledby="comparison-heading" hidden>
-      <h2 id="comparison-heading">第四步：横向比较全部场景</h2>
-      <p>四组结果均来自真实核保接口，用于理解风险事实如何改变确定性结论。</p>
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">PORTFOLIO VIEW</p>
+          <h2 id="comparison-heading">场景组合横向对比</h2>
+        </div>
+        <span class="step-pill">03 · 组合洞察</span>
+      </div>
+      <p>所有结果均来自实时核保接口，用于理解风险事实如何改变确定性结论。</p>
       <div id="comparison-summary" class="comparison-summary"></div>
       <div id="comparison-grid" class="comparison-grid"></div>
     </section>
   </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <noscript>此演示台需要启用 JavaScript；也可以按照 README 使用 API 和演示脚本。</noscript>
   <script src="./app.js" defer></script>
 </body>
