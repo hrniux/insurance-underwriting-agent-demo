@@ -17,6 +17,7 @@
 
 - 会话管理：创建/恢复会话，按角色保存用户和助手消息。
 - Agent 编排：固定七步流水线，成功或失败都保留步骤轨迹。
+- 幂等与并发保护：可选 `Idempotency-Key` 把并发重复提交折叠为一次 Agent 执行，同键异参明确返回冲突。
 - RAG：Markdown/Text 解析、段落切分、重叠窗口、向量化、入库、余弦相似度检索和元数据过滤。
 - 业务工具：保单、报价、历史核保、查勘报告、灾害风险和规则校验六类工具，共用统一注册表与审计轨迹。
 - 规则底线：模型只能解释规则结果，不能把 `MANUAL_REVIEW` 或 `REJECT` 降级为自动通过。
@@ -25,6 +26,7 @@
 - REST + MCP：REST 用于管理和调试，MCP 用于 Agent 工具发现与调用，两者复用同一业务实现。
 - 中文交互演示：无需复制命令即可选择四组虚构场景，运行真实核保并阅读规则、证据和七步轨迹。
 - 中文核保报告：把已保存的单次评估导出为 Markdown，完整保留结论、规则、证据、七步轨迹、工具记录和模型元数据。
+- 运行指标：Actuator 暴露提交结果、执行耗时和决策分布三组低基数 Micrometer 指标。
 
 ## 快速启动
 
@@ -41,6 +43,24 @@ mvn spring-boot:run
 curl --fail http://localhost:8080/actuator/health
 bash scripts/demo.sh
 ```
+
+需要验证客户端重试安全时，可为提交请求增加稳定的 `Idempotency-Key`。首次成功返回 `201` 和
+`Idempotency-Replayed: false`；相同键、相同业务载荷再次提交返回同一评估、HTTP `200` 和
+`Idempotency-Replayed: true`。相同键绑定不同载荷会返回 `409 IDEMPOTENCY_KEY_CONFLICT`。
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/underwriting/evaluations \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: interview-evaluation-001' \
+  -d '{"policyNo":"P-2001","question":"这张办公楼保单是否可以承保？"}'
+
+curl --fail http://localhost:8080/actuator/metrics/underwriting.evaluation.submissions
+curl --fail http://localhost:8080/actuator/metrics/underwriting.evaluation.duration
+curl --fail http://localhost:8080/actuator/metrics/underwriting.evaluation.decisions
+```
+
+幂等记录默认在单实例内保留 24 小时，最多 1,000 条；可通过 `IDEMPOTENCY_RETENTION` 和
+`IDEMPOTENCY_MAX_ENTRIES` 调整。失败执行不会占用键，因此调用方可以使用原键重试。
 
 浏览器访问：
 
@@ -162,9 +182,9 @@ src/main/java/com/hrniux/underwriting
 | Hash Embedding | 企业 Embedding 模型或合规云模型 |
 | 内存向量库 | PostgreSQL + PGVector、Milvus 或 Elasticsearch |
 | JSON 场景仓库 + 虚构工具 | 保单、报价、核保、查勘、灾害平台和规则引擎的真实 API 适配器 |
-| 单机同步编排 | 状态机/工作流引擎、消息队列、幂等键、超时补偿 |
+| 单机同步编排 + 单实例幂等单飞 | 状态机/工作流引擎、消息队列、Redis/数据库幂等记录、超时补偿 |
 | 环境变量密钥 | Vault/KMS、短期凭证、密钥轮转和出口网关 |
-| 单实例指标 | Micrometer、Prometheus、OpenTelemetry Trace、模型成本与召回质量看板 |
+| Micrometer 单实例指标 | Prometheus Registry、OpenTelemetry Trace、模型成本与召回质量看板 |
 
 生产环境还应加入租户/机构权限、字段级脱敏、操作审计、知识发布审批、Prompt 灰度、模型输出评测、人工反馈闭环和灾备策略。
 

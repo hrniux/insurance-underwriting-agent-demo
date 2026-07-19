@@ -10,9 +10,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.hrniux.underwriting.agent.EvaluationSubmissionResult;
+import com.hrniux.underwriting.agent.EvaluationSubmissionService;
 import com.hrniux.underwriting.agent.UnderwritingAgentOrchestrator;
 import com.hrniux.underwriting.agent.UnderwritingEvaluation;
 import com.hrniux.underwriting.api.ApiDtos.EvaluationApiRequest;
@@ -25,19 +28,29 @@ import jakarta.validation.Valid;
 public class UnderwritingEvaluationController {
 
     private final UnderwritingAgentOrchestrator orchestrator;
+    private final EvaluationSubmissionService submissions;
     private final UnderwritingMarkdownReportService reportService;
 
     public UnderwritingEvaluationController(
             UnderwritingAgentOrchestrator orchestrator,
+            EvaluationSubmissionService submissions,
             UnderwritingMarkdownReportService reportService) {
         this.orchestrator = orchestrator;
+        this.submissions = submissions;
         this.reportService = reportService;
     }
 
     @PostMapping
-    public ResponseEntity<UnderwritingEvaluation> evaluate(@Valid @RequestBody EvaluationApiRequest request) {
-        UnderwritingEvaluation evaluation = orchestrator.evaluate(request.toDomain());
-        return ResponseEntity.created(URI.create("/api/v1/underwriting/evaluations/" + evaluation.id()))
+    public ResponseEntity<UnderwritingEvaluation> evaluate(
+            @RequestHeader(name = EvaluationSubmissionService.IDEMPOTENCY_HEADER, required = false)
+            String idempotencyKey,
+            @Valid @RequestBody EvaluationApiRequest request) {
+        EvaluationSubmissionResult result = submissions.submit(request.toDomain(), idempotencyKey);
+        UnderwritingEvaluation evaluation = result.evaluation();
+        ResponseEntity.BodyBuilder response = result.replayed()
+                ? ResponseEntity.ok()
+                : ResponseEntity.created(URI.create("/api/v1/underwriting/evaluations/" + evaluation.id()));
+        return response.header(EvaluationSubmissionService.REPLAY_HEADER, Boolean.toString(result.replayed()))
                 .body(evaluation);
     }
 

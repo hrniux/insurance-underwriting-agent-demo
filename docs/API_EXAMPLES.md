@@ -57,14 +57,42 @@ curl -sS "$BASE_URL/api/v1/sessions/SES-替换为返回值" | python3 -m json.to
 curl -sS -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
   -H 'Content-Type: application/json' \
   -H 'X-Trace-Id: interview-demo-001' \
+  -H 'Idempotency-Key: interview-demo-001' \
   -d '{"policyNo":"P-1001","question":"暴雨风险较高，这张仓库财产险能否承保？"}' \
   | python3 -m json.tool
 ```
+
+把上面的请求原样执行两次：第一次返回 `201`、响应头 `Idempotency-Replayed: false`；第二次
+不再执行七步 Agent，而是返回相同评估编号、HTTP `200` 和 `Idempotency-Replayed: true`。
+同一个键改用不同 `policyNo`、`sessionId` 或 `question` 会返回 `409`：
+
+```json
+{
+  "status": 409,
+  "errorCode": "IDEMPOTENCY_KEY_CONFLICT",
+  "detail": "Idempotency-Key has already been used with a different request"
+}
+```
+
+键只能使用字母、数字、点、下划线、冒号和连字符，长度 1–128。失败执行不缓存；同一个键可重试。
 
 ```bash
 curl -sS "$BASE_URL/api/v1/underwriting/evaluations/EVAL-替换为返回值" | python3 -m json.tool
 curl -sS "$BASE_URL/api/v1/underwriting/evaluations" | python3 -m json.tool
 ```
+
+### Actuator 运行指标
+
+至少提交一次评估后查询：
+
+```bash
+curl -sS "$BASE_URL/actuator/metrics/underwriting.evaluation.submissions" | python3 -m json.tool
+curl -sS "$BASE_URL/actuator/metrics/underwriting.evaluation.duration" | python3 -m json.tool
+curl -sS "$BASE_URL/actuator/metrics/underwriting.evaluation.decisions" | python3 -m json.tool
+```
+
+提交计数和耗时按 `outcome=created|replayed|conflict|failed` 聚合；决策计数只记录真实 Agent
+执行，按 `decision` 和 `risk_level` 聚合，不把重放请求重复计入业务结论。
 
 ### 下载中文 Markdown 报告 `/{evaluationId}/report`
 

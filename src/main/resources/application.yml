@@ -14,7 +14,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       show-details: always
@@ -36,3 +36,6 @@ app:
       chunk-size: 500
       chunk-overlap: 80
       top-k: 4
+    idempotency:
+      max-entries: ${IDEMPOTENCY_MAX_ENTRIES:1000}
+      retention: ${IDEMPOTENCY_RETENTION:24h}

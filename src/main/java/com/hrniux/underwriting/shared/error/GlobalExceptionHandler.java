@@ -29,7 +29,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ProblemDetail> domain(DomainException error, HttpServletRequest request) {
         HttpStatus status = error instanceof ResourceNotFoundException
                 ? HttpStatus.NOT_FOUND
-                : error instanceof ConflictException ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+                : error instanceof ConflictException
+                        ? HttpStatus.CONFLICT
+                        : error instanceof ServiceCapacityException
+                                ? HttpStatus.SERVICE_UNAVAILABLE
+                                : HttpStatus.BAD_REQUEST;
         return response(status, error.errorCode(), error.getMessage(), request);
     }
 

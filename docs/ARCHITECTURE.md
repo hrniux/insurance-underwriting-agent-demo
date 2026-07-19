@@ -17,7 +17,10 @@ flowchart LR
     Console --> DemoAPI
     Console --> EvaluationAPI["核保评估 /api/v1/underwriting/evaluations"]
     API --> Agent["UnderwritingAgentOrchestrator"]
-    EvaluationAPI --> Agent
+    EvaluationAPI --> Submission["EvaluationSubmissionService"]
+    Submission --> Agent
+    Submission --> Metrics["Micrometer metrics"]
+    Submission --> Idempotency["Bounded idempotency registry"]
     Agent --> Session["SessionService"]
     Agent --> Tools["ToolRegistry"]
     MCP --> Tools
@@ -102,18 +105,42 @@ REST 的 `/api/v1/tools` 和 MCP 的六个 `@McpTool` 都委托给 `ToolRegistry
 
 MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/mcp`。六个工具都有强类型参数与输出 Schema，适合作为另一个 Agent 或大模型客户端的工具服务器。
 
-## 9. 一致性、并发与演进
+## 9. 幂等、并发与指标
 
-Demo 仓库使用 `ConcurrentHashMap`、不可变 record 和复制后返回，避免最明显的并发修改问题。真正生产化还需要：
+`POST /api/v1/underwriting/evaluations` 可选接收 `Idempotency-Key`。提交服务对规范化后的
+`sessionId + policyNo + question` 计算 SHA-256 指纹，并用一个短临界区原子认领键：
 
-- 会话版本号、幂等请求号和数据库事务；
+- 首个请求成为 owner，执行一次七步 Agent；
+- 同键、同指纹的并发请求等待同一个 `CompletableFuture`，完成后直接重放同一评估；
+- 同键、不同指纹立即返回 `409 IDEMPOTENCY_KEY_CONFLICT`；
+- 执行失败会完成异常并删除槽位，原键可以安全重试；
+- 只淘汰已完成槽位，绝不淘汰进行中的 owner，避免容量回收制造重复执行。
+
+这是单实例 Demo 实现。缓存通过最大条数和完成后保留期限制内存，默认 1,000 条、24 小时。
+多实例生产环境应把同一状态机迁移到 Redis 或带唯一约束的数据库，并保存最终响应或评估编号。
+
+提交服务同时写入三组低基数 Micrometer 指标：
+
+| 指标 | 标签 | 含义 |
+|---|---|---|
+| `underwriting.evaluation.submissions` | `outcome` | `created`、`replayed`、`conflict`、`failed` 提交数 |
+| `underwriting.evaluation.duration` | `outcome` | 包含并发等待时间的 API 提交耗时 |
+| `underwriting.evaluation.decisions` | `decision`、`risk_level` | 实际执行生成的结论分布，不重复统计重放请求 |
+
+`/actuator/metrics/{metricName}` 可直接检查本机指标。生产环境再接 Prometheus Registry 和告警系统。
+
+## 10. 一致性与生产演进
+
+Demo 仓库使用 `ConcurrentHashMap`、不可变 record、复制后返回和单实例幂等单飞，避免最明显的并发修改与重复提交问题。真正生产化还需要：
+
+- 会话版本号、跨节点幂等记录和数据库事务；
 - 分布式锁或工作流实例级串行；
 - 异步任务、超时取消、补偿与死信队列；
 - RAG 文档状态机（草稿、审核、发布、下线）和索引版本；
 - 租户隔离、RBAC、脱敏、全链路审计和数据留存策略；
 - Prompt/模型灰度、离线评测集、召回指标和人工反馈闭环。
 
-## 10. 主要扩展点
+## 11. 主要扩展点
 
 | 接口 | 当前实现 | 可替换实现 |
 |---|---|---|

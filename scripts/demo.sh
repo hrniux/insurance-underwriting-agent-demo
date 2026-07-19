@@ -31,6 +31,7 @@ evaluate_scenario() {
   curl --silent --show-error --fail -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
     -H 'Content-Type: application/json' \
     -H "X-Trace-Id: demo-${policy_no}" \
+    -H "Idempotency-Key: demo-evaluation-${policy_no}" \
     -d "{\"policyNo\":\"$policy_no\",\"question\":\"$question\"}" \
     >"$output_file"
   python3 -m json.tool "$output_file"
@@ -66,4 +67,5 @@ echo "中文演示已完成。"
 echo "Swagger：$BASE_URL/swagger-ui/index.html"
 echo "场景目录：$BASE_URL/api/v1/demo/scenarios"
 echo "教学指南：docs/DEMO_DATA_GUIDE.md"
+echo "运行指标：$BASE_URL/actuator/metrics/underwriting.evaluation.submissions"
 echo "MCP：$BASE_URL/mcp"

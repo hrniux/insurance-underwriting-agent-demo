@@ -173,6 +173,23 @@ class DocumentationContractTest {
                 "GET /api/v1/underwriting/evaluations/{evaluationId}/report");
     }
 
+    @Test
+    void documentsIdempotentSubmissionAndOperationalMetrics() throws IOException {
+        assertThat(read("README.md")).contains(
+                "Idempotency-Key",
+                "Idempotency-Replayed",
+                "IDEMPOTENCY_KEY_CONFLICT",
+                "underwriting.evaluation.submissions");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "CompletableFuture",
+                "underwriting.evaluation.duration",
+                "risk_level");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "outcome=created|replayed|conflict|failed");
+        assertThat(read("scripts/demo.sh")).contains(
+                "Idempotency-Key: demo-evaluation-${policy_no}");
+    }
+
     private String read(String path) throws IOException {
         return Files.readString(ROOT.resolve(path));
     }

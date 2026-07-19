@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.UUID;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -110,6 +112,74 @@ class UnderwritingApiIntegrationTest {
                 .andExpect(jsonPath("$.violations.question").isNotEmpty())
                 .andExpect(jsonPath("$.traceId").isNotEmpty())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    @Test
+    void replaysAnIdempotentEvaluationAndRejectsAChangedPayload() throws Exception {
+        String key = "api-idempotency-" + UUID.randomUUID();
+        String body = """
+                {"policyNo":"P-2001","question":"这张低风险办公楼保单是否可以承保？"}
+                """;
+
+        String created = mvc.perform(post("/api/v1/underwriting/evaluations")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotency-Replayed", "false"))
+                .andReturn().getResponse().getContentAsString();
+        String evaluationId = JsonPath.read(created, "$.id");
+
+        mvc.perform(post("/api/v1/underwriting/evaluations")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Idempotency-Replayed", "true"))
+                .andExpect(jsonPath("$.id").value(evaluationId));
+
+        mvc.perform(post("/api/v1/underwriting/evaluations")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"policyNo":"P-2001","question":"改成另一个业务问题"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("IDEMPOTENCY_KEY_CONFLICT"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/underwriting/evaluations"));
+    }
+
+    @Test
+    void rejectsAnInvalidIdempotencyKeyWithProblemDetails() throws Exception {
+        mvc.perform(post("/api/v1/underwriting/evaluations")
+                        .header("Idempotency-Key", "contains spaces")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"policyNo":"P-2001","question":"是否承保？"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_IDEMPOTENCY_KEY"))
+                .andExpect(jsonPath("$.traceId").isNotEmpty());
+    }
+
+    @Test
+    void exposesLowCardinalityEvaluationMetrics() throws Exception {
+        mvc.perform(post("/api/v1/underwriting/evaluations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"policyNo":"P-2001","question":"记录一次指标。"}
+                                """))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/actuator/metrics/underwriting.evaluation.submissions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("underwriting.evaluation.submissions"))
+                .andExpect(jsonPath("$.availableTags[?(@.tag == 'outcome')]").exists());
+
+        mvc.perform(get("/actuator/metrics/underwriting.evaluation.decisions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableTags[?(@.tag == 'decision')]").exists())
+                .andExpect(jsonPath("$.availableTags[?(@.tag == 'risk_level')]").exists());
     }
 
     @Test

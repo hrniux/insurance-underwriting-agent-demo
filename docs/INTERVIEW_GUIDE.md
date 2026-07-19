@@ -24,7 +24,7 @@
 
 ### 第 4–5 分钟：讲可靠性与生产化
 
-说明失败响应、步骤/工具耗时、模型 provider 与 fallback 标记如何支持审计，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
+说明 `Idempotency-Key` 如何合并并发重复请求，展示 Actuator 提交/耗时/决策指标，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
 
 ## 简历职责如何映射到代码
 
@@ -36,6 +36,7 @@
 | 内部接口封装为 Agent/MCP 工具 | `UnderwritingFactTools`、`ToolRegistry`、`UnderwritingMcpTools` |
 | 规则校验与可解释决策 | `UnderwritingRuleEngine`、`RuleEvaluation`、步骤/工具 Trace |
 | 可审计中文结果交付 | `UnderwritingMarkdownReportService`、`GET /api/v1/underwriting/evaluations/{evaluationId}/report` |
+| 幂等、并发单飞与运行指标 | `EvaluationSubmissionService`、`Idempotency-Key`、Actuator Metrics |
 
 ## 常见面试问题
 
@@ -69,7 +70,7 @@ MCP 给工具提供统一发现、输入 Schema 和调用协议，便于不同 A
 
 ### Q8：并发下内存实现安全吗？
 
-Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回，能支撑本地演示，但不提供跨节点事务。生产会加入 Redis/PostgreSQL、乐观锁、幂等键、事务和工作流实例级并发控制。
+Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提交额外支持 `Idempotency-Key`：首个请求认领执行权，并发重复请求等待同一个 `CompletableFuture`；同键异参返回 409；失败后释放键。记录有容量和 TTL 边界，但只在单实例有效。生产应把状态迁移到 Redis 或数据库唯一键，并结合事务、乐观锁和工作流实例级并发控制。
 
 ### Q9：规则如何扩展和灰度？
 
@@ -81,7 +82,7 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回，能支撑
 
 ### Q11：怎么做可观测性？
 
-当前返回每一步和每个工具的状态、耗时、错误码，模型响应含 provider/model/attempts/fallback。生产会接 Micrometer、Prometheus 和 OpenTelemetry，将 traceId 贯穿 API、工具、模型和数据库，并监控延迟、失败率、Token 成本、规则命中和 RAG 质量。
+当前返回每一步和每个工具的状态、耗时、错误码，模型响应含 provider/model/attempts/fallback；同时已用 Micrometer 记录提交结果、API 耗时和决策/风险分布，并通过 Actuator 查询。所有标签都是有限枚举，避免把保单号或幂等键作为标签造成高基数。生产会再接 Prometheus 和 OpenTelemetry，将 traceId 贯穿 API、工具、模型和数据库，并监控 Token 成本、规则命中和 RAG 质量。
 
 ### Q12：真实内部系统不稳定怎么办？
 
