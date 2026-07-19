@@ -12,4 +12,6 @@ public interface KnowledgeRepository {
     List<KnowledgeDocument> findAll();
 
     boolean existsById(String id);
+
+    void deleteById(String id);
 }

@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,8 +14,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.hrniux.underwriting.api.ApiDtos.KnowledgeDocumentRequest;
 import com.hrniux.underwriting.api.ApiDtos.KnowledgeEvaluationRequest;
 import com.hrniux.underwriting.api.ApiDtos.KnowledgeSearchRequest;
+import com.hrniux.underwriting.api.ApiDtos.KnowledgeVersionRequest;
 import com.hrniux.underwriting.rag.KnowledgeDocument;
-import com.hrniux.underwriting.rag.KnowledgeIngestionResult;
+import com.hrniux.underwriting.rag.KnowledgeDocumentVersion;
+import com.hrniux.underwriting.rag.KnowledgePublicationResult;
 import com.hrniux.underwriting.rag.KnowledgeService;
 import com.hrniux.underwriting.rag.RetrievalEvaluationReport;
 import com.hrniux.underwriting.rag.RetrievalEvaluationService;
@@ -35,14 +38,58 @@ public class KnowledgeController {
     }
 
     @PostMapping("/documents")
-    public ResponseEntity<KnowledgeIngestionResult> ingest(@Valid @RequestBody KnowledgeDocumentRequest request) {
-        KnowledgeIngestionResult result = knowledge.ingest(request.toDomain());
-        return ResponseEntity.created(URI.create("/api/v1/knowledge/documents/" + result.documentId())).body(result);
+    public ResponseEntity<KnowledgeDocumentVersion> createDraft(
+            @Valid @RequestBody KnowledgeDocumentRequest request) {
+        KnowledgeDocumentVersion draft = knowledge.createDraft(request.toDomain());
+        String location = "/api/v1/knowledge/documents/%s/versions/%d"
+                .formatted(draft.documentId(), draft.version());
+        return ResponseEntity.created(URI.create(location)).body(draft);
     }
 
     @GetMapping("/documents")
     public List<KnowledgeDocument> list() {
         return knowledge.list();
+    }
+
+    @GetMapping("/documents/{documentId}")
+    public KnowledgeDocument get(@PathVariable String documentId) {
+        return knowledge.get(documentId);
+    }
+
+    @GetMapping("/documents/{documentId}/versions")
+    public List<KnowledgeDocumentVersion> versions(@PathVariable String documentId) {
+        return knowledge.versions(documentId);
+    }
+
+    @GetMapping("/documents/{documentId}/versions/{version}")
+    public KnowledgeDocumentVersion getVersion(
+            @PathVariable String documentId,
+            @PathVariable int version) {
+        return knowledge.getVersion(documentId, version);
+    }
+
+    @PostMapping("/documents/{documentId}/versions")
+    public ResponseEntity<KnowledgeDocumentVersion> createVersion(
+            @PathVariable String documentId,
+            @Valid @RequestBody KnowledgeVersionRequest request) {
+        KnowledgeDocumentVersion draft = knowledge.createVersion(documentId, request.toDomain(documentId));
+        String location = "/api/v1/knowledge/documents/%s/versions/%d"
+                .formatted(draft.documentId(), draft.version());
+        return ResponseEntity.created(URI.create(location)).body(draft);
+    }
+
+    @PostMapping("/documents/{documentId}/versions/{version}/publish")
+    public KnowledgePublicationResult publish(
+            @PathVariable String documentId,
+            @PathVariable int version) {
+        return knowledge.publish(documentId, version);
+    }
+
+    @PostMapping("/documents/{documentId}/versions/{version}/retire")
+    public KnowledgeDocumentVersion retire(
+            @PathVariable String documentId,
+            @PathVariable int version) {
+        return knowledge.retire(documentId, version);
     }
 
     @PostMapping("/search")

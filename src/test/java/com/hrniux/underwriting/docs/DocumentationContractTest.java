@@ -22,6 +22,7 @@ class DocumentationContractTest {
                 "docs/DEMO_DATA_GUIDE.md",
                 "docs/INTERVIEW_GUIDE.md",
                 "scripts/demo.sh",
+                "scripts/knowledge-lifecycle-demo.sh",
                 "src/main/resources/static/demo/index.html",
                 "src/main/resources/static/demo/app.js",
                 "src/main/resources/static/demo/styles.css",
@@ -322,6 +323,32 @@ class DocumentationContractTest {
                 "[4/10] RAG 黄金问题集离线评测",
                 "/api/v1/knowledge/evaluations",
                 "RAG 质量门禁未通过");
+    }
+
+    @Test
+    void documentsTheVersionedKnowledgePublicationLifecycleAndBoundaries() throws IOException {
+        assertThat(read("README.md")).contains(
+                "DRAFT → PUBLISHED → RETIRED",
+                "scripts/knowledge-lifecycle-demo.sh",
+                "完整旧版或");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "KnowledgeVersionRepository",
+                "AtomicReference<Map<...>>",
+                "新索引构建失败",
+                "Outbox");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "/versions/1/publish",
+                "/versions/2/retire",
+                "KNOWLEDGE_DRAFT_EXISTS",
+                "INVALID_KNOWLEDGE_TRANSITION");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "### Q19",
+                "未审核或错误条款",
+                "不能把单实例 `synchronized` 当成分布式发布事务");
+        assertThat(read("scripts/knowledge-lifecycle-demo.sh")).contains(
+                "[1/8] 创建 v1 草稿",
+                "[8/8] 验证下线后不可召回",
+                "知识版本生命周期演示完成");
     }
 
     private String read(String path) throws IOException {

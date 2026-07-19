@@ -32,7 +32,7 @@ class ManagementApiIntegrationTest {
     }
 
     @Test
-    void ingestsListsAndSearchesKnowledge() throws Exception {
+    void draftsPublishesReplacesAndRetiresKnowledgeVersions() throws Exception {
         String documentId = "API-" + UUID.randomUUID();
         mvc.perform(post("/api/v1/knowledge/documents")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -42,6 +42,21 @@ class ManagementApiIntegrationTest {
                                 """.formatted(documentId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.documentId").value(documentId))
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.status").value("DRAFT"));
+
+        mvc.perform(post("/api/v1/knowledge/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"%s\",\"topK\":20,\"productCode\":\"PROPERTY\"}"
+                                .formatted(documentId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.chunk.documentId == '%s')]".formatted(documentId)).doesNotExist());
+
+        mvc.perform(post("/api/v1/knowledge/documents/{documentId}/versions/1/publish", documentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentId").value(documentId))
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.status").value("PUBLISHED"))
                 .andExpect(jsonPath("$.chunkCount").value(1));
 
         mvc.perform(get("/api/v1/knowledge/documents"))
@@ -59,6 +74,48 @@ class ManagementApiIntegrationTest {
                 .andExpect(jsonPath("$[0].lexicalScore").isNumber())
                 .andExpect(jsonPath("$[0].mode").isNotEmpty())
                 .andExpect(jsonPath("$[0].matchedTerms").isArray());
+
+        mvc.perform(post("/api/v1/knowledge/documents/{documentId}/versions", documentId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"面试演示条款修订版","type":"PRODUCT_CLAUSE",
+                                 "productCode":"PROPERTY","content":"台风黑色风险必须使用 replacementkeyword 新版规则。",
+                                 "metadata":{"source":"api-test-v2"}}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.status").value("DRAFT"));
+
+        mvc.perform(post("/api/v1/knowledge/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"replacementkeyword\",\"topK\":20,\"productCode\":\"PROPERTY\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.chunk.documentId == '%s')]".formatted(documentId)).doesNotExist());
+
+        mvc.perform(post("/api/v1/knowledge/documents/{documentId}/versions/2/publish", documentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.status").value("PUBLISHED"));
+
+        mvc.perform(get("/api/v1/knowledge/documents/{documentId}/versions", documentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("RETIRED"))
+                .andExpect(jsonPath("$[1].status").value("PUBLISHED"))
+                .andExpect(jsonPath("$[1].document.metadata.source").value("api-test-v2"));
+
+        mvc.perform(post("/api/v1/knowledge/documents/{documentId}/versions/1/publish", documentId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_KNOWLEDGE_TRANSITION"));
+
+        mvc.perform(post("/api/v1/knowledge/documents/{documentId}/versions/2/retire", documentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RETIRED"));
+
+        mvc.perform(post("/api/v1/knowledge/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"replacementkeyword\",\"topK\":20,\"productCode\":\"PROPERTY\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.chunk.documentId == '%s')]".formatted(documentId)).doesNotExist());
     }
 
     @Test

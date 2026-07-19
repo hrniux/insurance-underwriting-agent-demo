@@ -88,6 +88,21 @@ flowchart LR
 
 ## 5. RAG 流程
 
+外部知识先进入版本化发布状态机，只有 `PUBLISHED` 版本能写入检索索引：
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT: 创建版本
+    DRAFT --> PUBLISHED: 解析/切分/Embedding 成功
+    PUBLISHED --> RETIRED: 发布新版本或主动下线
+    RETIRED --> [*]
+```
+
+同一文档同时最多一个 `DRAFT`。发布 v2 时，服务先完整构建 v2 分块；`VectorStore.replaceDocument` 使用
+`AtomicReference<Map<...>>` 交换不可变索引快照，按 `documentId` 一次性删除 v1 分块并加入 v2 分块，检索线程
+不会观察到半新半旧的索引。新索引构建失败时不会修改快照，也不会把 v2 标为已发布；v1 继续对 Agent 可见。
+状态转换完成后，v1 保留为 `RETIRED` 历史。主动下线会移除索引和当前发布目录，但不删除版本记录。
+
 ```text
 Markdown/Text
   -> 清理与解析
@@ -261,7 +276,7 @@ Spring Profile 选择：
 - 会话版本号、跨节点幂等记录和数据库事务；
 - 分布式锁或工作流实例级串行；
 - 持久化任务恢复、租约/心跳、超时取消、补偿与死信队列；
-- RAG 文档状态机（草稿、审核、发布、下线）和索引版本；
+- RAG 发布审批人、双人复核、知识生效区间、持久化版本表和数据库/索引跨系统一致性；
 - 租户隔离、RBAC、脱敏、全链路审计和数据留存策略；
 - Prompt/模型灰度、离线评测集、召回指标和经过审批的脱敏反馈样本集。
 
@@ -274,6 +289,7 @@ Spring Profile 选择：
 | `HumanReviewRepository` | 默认内存 / 可选 H2 唯一键 | PostgreSQL 追加事件 / 工作流任务库 |
 | `UnderwritingTaskRepository` | 有界内存任务快照 | 工作流引擎 / PostgreSQL 任务表与租约 |
 | `EmbeddingService` | Hash | 企业 Embedding API |
-| `VectorStore` | 内存 | PGVector / Milvus |
+| `KnowledgeVersionRepository` | 内存版本历史与三态发布 | PostgreSQL 版本表、审批流和 Outbox |
+| `VectorStore` | 不可变内存快照、按文档原子替换 | PGVector / Milvus / OpenSearch 索引别名切换 |
 | `UnderwritingFactTools` | JSON 场景仓库 | 内部 REST/gRPC/MQ 适配器 |
 | `ModelGateway` | Mock / OpenAI-compatible | 企业模型平台 SDK |

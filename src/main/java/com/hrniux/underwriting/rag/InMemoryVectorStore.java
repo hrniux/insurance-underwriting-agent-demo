@@ -2,13 +2,14 @@ package com.hrniux.underwriting.rag;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -24,7 +25,7 @@ public class InMemoryVectorStore implements VectorStore {
     private static final int MAX_EXPLAINED_TERMS = 12;
 
     private final EmbeddingService embeddingService;
-    private final ConcurrentHashMap<String, StoredChunk> chunks = new ConcurrentHashMap<>();
+    private final AtomicReference<Map<String, StoredChunk>> chunks = new AtomicReference<>(Map.of());
 
     public InMemoryVectorStore(EmbeddingService embeddingService) {
         this.embeddingService = Objects.requireNonNull(embeddingService, "embeddingService must not be null");
@@ -33,16 +34,59 @@ public class InMemoryVectorStore implements VectorStore {
     @Override
     public void add(DocumentChunk chunk) {
         Objects.requireNonNull(chunk, "chunk must not be null");
+        StoredChunk stored = toStoredChunk(chunk);
+        chunks.updateAndGet(current -> {
+            Map<String, StoredChunk> next = new HashMap<>(current);
+            next.put(chunk.id(), stored);
+            return Map.copyOf(next);
+        });
+    }
+
+    @Override
+    public void replaceDocument(String documentId, List<DocumentChunk> replacements) {
+        String normalizedDocumentId = requireDocumentId(documentId);
+        Objects.requireNonNull(replacements, "chunks must not be null");
+        if (replacements.isEmpty()) {
+            throw new IllegalArgumentException("chunks must not be empty");
+        }
+        Map<String, StoredChunk> replacementMap = replacements.stream()
+                .peek(chunk -> {
+                    if (!normalizedDocumentId.equals(chunk.documentId())) {
+                        throw new IllegalArgumentException("all chunks must belong to document " + documentId);
+                    }
+                })
+                .map(this::toStoredChunk)
+                .collect(Collectors.toUnmodifiableMap(stored -> stored.chunk().id(), Function.identity()));
+        chunks.updateAndGet(current -> {
+            Map<String, StoredChunk> next = new HashMap<>(current);
+            next.entrySet().removeIf(entry -> entry.getValue().chunk().documentId().equals(normalizedDocumentId));
+            next.putAll(replacementMap);
+            return Map.copyOf(next);
+        });
+    }
+
+    @Override
+    public void removeDocument(String documentId) {
+        String normalizedDocumentId = requireDocumentId(documentId);
+        chunks.updateAndGet(current -> {
+            Map<String, StoredChunk> next = new HashMap<>(current);
+            next.entrySet().removeIf(entry -> entry.getValue().chunk().documentId().equals(normalizedDocumentId));
+            return Map.copyOf(next);
+        });
+    }
+
+    private StoredChunk toStoredChunk(DocumentChunk chunk) {
+        Objects.requireNonNull(chunk, "chunk must not be null");
         String searchableText = "%s %s %s %s".formatted(
                 chunk.documentId(), chunk.title(), chunk.content(), String.join(" ", chunk.metadata().values()));
         List<String> terms = SearchTextAnalyzer.tokenize(searchableText);
         Map<String, Long> termFrequencies = terms.stream()
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
-        chunks.put(chunk.id(), new StoredChunk(
+        return new StoredChunk(
                 chunk,
                 embeddingService.embed(chunk.title() + "\n" + chunk.content()),
                 termFrequencies,
-                terms.size()));
+                terms.size());
     }
 
     @Override
@@ -57,7 +101,7 @@ public class InMemoryVectorStore implements VectorStore {
         double[] queryVector = embeddingService.embed(query);
         Set<String> queryTerms = new LinkedHashSet<>(SearchTextAnalyzer.tokenize(query));
         String normalizedProduct = productCode == null ? null : productCode.toUpperCase(Locale.ROOT);
-        List<StoredChunk> candidates = chunks.values().stream()
+        List<StoredChunk> candidates = chunks.get().values().stream()
                 .filter(stored -> type == null || stored.chunk().type() == type)
                 .filter(stored -> normalizedProduct == null
                         || stored.chunk().productCode().equals(normalizedProduct))
@@ -91,7 +135,14 @@ public class InMemoryVectorStore implements VectorStore {
 
     @Override
     public int size() {
-        return chunks.size();
+        return chunks.get().size();
+    }
+
+    private String requireDocumentId(String documentId) {
+        if (documentId == null || documentId.isBlank()) {
+            throw new IllegalArgumentException("documentId must not be blank");
+        }
+        return documentId.trim();
     }
 
     private ScoredChunk score(

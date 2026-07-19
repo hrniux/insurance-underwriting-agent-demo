@@ -34,4 +34,9 @@ public class InMemoryKnowledgeRepository implements KnowledgeRepository {
     public boolean existsById(String id) {
         return documents.containsKey(id);
     }
+
+    @Override
+    public void deleteById(String id) {
+        documents.remove(id);
+    }
 }

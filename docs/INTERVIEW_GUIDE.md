@@ -31,7 +31,7 @@
 | 简历职责 | Demo 代码 |
 |---|---|
 | 会话管理、任务编排、模型封装、提示词管理 | `session`、`agent`、`model`、`prompt` 包 |
-| RAG 解析、切分、混合召回与质量评测 | `KnowledgeService`、`ParagraphTextSplitter`、`HashEmbeddingService`、BM25 融合、`RetrievalEvaluationService` |
+| RAG 版本发布、解析切分、混合召回与质量评测 | `KnowledgeService`、`KnowledgeDocumentVersion`、原子索引快照、BM25 融合、`RetrievalEvaluationService` |
 | 模型切换、超时、重试 | `RoutingModelGateway`、`OpenAiCompatibleModelGateway` |
 | 内部接口封装为 Agent/MCP 工具 | `UnderwritingFactTools`、`ToolRegistry`、`UnderwritingMcpTools` |
 | 规则校验与可解释决策 | `UnderwritingRuleEngine`、`RuleEvaluation`、步骤/工具 Trace |
@@ -122,10 +122,19 @@ Demo 同时保留余弦分数和 BM25 分数，用固定权重融合，并返回
 当前示例集很小，只证明算法和回归链路；生产必须由核保专家维护版本化、脱敏、有代表性的标注集，并补充 NDCG、
 权限过滤、重排效果、线上无结果率和人工引用反馈，不能把一次 Demo 的 `passed=true` 宣称为生产质量达标。
 
+### Q19：如何避免未审核或错误条款直接影响核保 Agent？
+
+上传只创建 `DRAFT`，检索只读取 `PUBLISHED`。发布时先解析、切分和生成新版本全部 Embedding；只有完整成功后才
+通过不可变 Map 快照按文档原子替换索引，同时把旧发布版本转为 `RETIRED`。如果 Embedding 失败，旧版本和旧索引
+保持不变，新版本仍是草稿。主动下线会立即从索引移除，但历史版本和时间戳仍可审计。当前 Demo 的“发布”没有真实
+审批人、RBAC、双人复核、生效日期和数据库事务；生产会把版本和审批保存在 PostgreSQL，通过 Outbox/索引任务及
+索引别名切换解决数据库与向量库一致性，不能把单实例 `synchronized` 当成分布式发布事务。
+
 ## 容易被追问的取舍
 
 - Hash Embedding 是演示替身，不应包装成生产语义模型。
 - 混合分数在单次候选集内归一化，只用于排序，不是概率；内置两条黄金问题也不代表真实业务质量。
+- 知识版本状态机和原子索引替换是真实实现，但版本仍在内存中，也没有审批身份、RBAC、生效日期或跨系统事务。
 - 默认仓库是内存实现；可选 H2 Profile 能演示重启恢复，但不是生产数据库架构。
 - H2 Profile 尚未覆盖知识库、Prompt 和幂等注册表，也没有生产级迁移、跨聚合事务或多节点协调。
 - 异步任务状态和任务幂等仍在单实例内存中；进程退出时不会恢复排队/运行任务，也没有取消与自动补偿。

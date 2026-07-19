@@ -61,6 +61,19 @@ public final class ApiDtos {
         }
     }
 
+    public record KnowledgeVersionRequest(
+            @NotBlank String title,
+            @NotNull DocumentType type,
+            @NotBlank String productCode,
+            @NotBlank String content,
+            Map<String, String> metadata) {
+
+        KnowledgeDocument toDomain(String documentId) {
+            return new KnowledgeDocument(documentId, title, type, productCode, content,
+                    metadata == null ? Map.of() : metadata);
+        }
+    }
+
     public record KnowledgeSearchRequest(
             @NotBlank String query,
             @Min(1) @Max(20) int topK,

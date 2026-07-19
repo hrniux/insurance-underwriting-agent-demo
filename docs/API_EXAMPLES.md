@@ -288,9 +288,13 @@ sed -n '1,80p' "underwriting-report-${evaluation_id}.md"
 
 ## 知识文档 `/api/v1/knowledge/documents`
 
+该列表只返回当前 `PUBLISHED` 文档；草稿和历史版本使用版本接口查询：
+
 ```bash
 curl -sS "$BASE_URL/api/v1/knowledge/documents" | python3 -m json.tool
 ```
+
+创建 v1 草稿，响应状态为 `DRAFT`，此时内容不会进入检索：
 
 ```bash
 curl -sS -X POST "$BASE_URL/api/v1/knowledge/documents" \
@@ -303,6 +307,54 @@ curl -sS -X POST "$BASE_URL/api/v1/knowledge/documents" \
     "content":"暴雨红色风险区域应转人工复核，并核验防洪整改证明。",
     "metadata":{"source":"interview-demo"}
   }' | python3 -m json.tool
+```
+
+发布 v1 并查询当前文档与版本历史：
+
+```bash
+curl -sS -X POST \
+  "$BASE_URL/api/v1/knowledge/documents/DEMO-CLAUSE-001/versions/1/publish" \
+  | python3 -m json.tool
+
+curl -sS "$BASE_URL/api/v1/knowledge/documents/DEMO-CLAUSE-001" | python3 -m json.tool
+curl -sS "$BASE_URL/api/v1/knowledge/documents/DEMO-CLAUSE-001/versions" | python3 -m json.tool
+```
+
+创建 v2 草稿。只允许同时存在一个草稿；重复创建返回 `409 KNOWLEDGE_DRAFT_EXISTS`：
+
+```bash
+curl -sS -X POST \
+  "$BASE_URL/api/v1/knowledge/documents/DEMO-CLAUSE-001/versions" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title":"演示附加条款修订版",
+    "type":"PRODUCT_CLAUSE",
+    "productCode":"PROPERTY",
+    "content":"修订版要求核验防洪整改证明和应急预案。",
+    "metadata":{"source":"interview-demo-v2"}
+  }' | python3 -m json.tool
+```
+
+发布 v2 后，v1 自动成为 `RETIRED`，索引中该文档的全部 v1 分块一次性替换为 v2 分块：
+
+```bash
+curl -sS -X POST \
+  "$BASE_URL/api/v1/knowledge/documents/DEMO-CLAUSE-001/versions/2/publish" \
+  | python3 -m json.tool
+```
+
+下线当前版本后，该文档不再参与检索，但历史仍可通过 `/versions` 查询：
+
+```bash
+curl -sS -X POST \
+  "$BASE_URL/api/v1/knowledge/documents/DEMO-CLAUSE-001/versions/2/retire" \
+  | python3 -m json.tool
+```
+
+非法重复发布、发布已下线版本或下线草稿返回 `409 INVALID_KNOWLEDGE_TRANSITION`。一条可重复的独立演示命令是：
+
+```bash
+bash scripts/knowledge-lifecycle-demo.sh
 ```
 
 ## RAG 检索 `/api/v1/knowledge/search`

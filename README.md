@@ -21,6 +21,7 @@
 - 幂等与并发保护：可选 `Idempotency-Key` 把并发重复提交折叠为一次 Agent 执行，同键异参明确返回冲突。
 - 异步任务编排：独立任务 REST API 返回 `202 Accepted`，后台执行七步 Agent，支持状态轮询、同键重放、有界线程池/队列和安全失败快照。
 - RAG：Markdown/Text 解析、段落切分、重叠窗口、向量化入库；向量余弦与 BM25 词法分数融合排序，返回命中词/分数组成，并用黄金问题集计算 Recall@K、MRR 和质量阈值。
+- 知识发布治理：文档按版本经历 `DRAFT → PUBLISHED → RETIRED`；草稿不可召回，发布新版本原子替换旧索引，下线后立即退出检索并保留历史。
 - 业务工具：保单、报价、历史核保、查勘报告、灾害风险和规则校验六类工具，共用统一注册表与审计轨迹。
 - 分级故障策略：关键业务资料失败立即终止；灾害外部数据源可安全降级为未知，但强制提升到人工复核并保留结构化告警。
 - 规则底线：模型只能解释规则结果，不能把 `MANUAL_REVIEW` 或 `REJECT` 降级为自动通过。
@@ -236,6 +237,23 @@ QUESTION_UNDERSTANDING
 
 一次完整评估会返回：最终决策、风险等级/分数、命中规则、知识证据、模型摘要、建议动作、结构化降级告警、5 次业务资料工具调用 + 1 次规则工具调用，以及 7 条步骤轨迹。正常流程步骤为 `SUCCESS`；允许继续但资料不完整时明确标记 `DEGRADED`，不会伪装成成功或低风险。
 
+## 知识版本与发布生命周期
+
+管理 API 不再让外部上传内容立即进入 Agent 检索。`POST /api/v1/knowledge/documents` 创建 v1 草稿；
+`POST /documents/{id}/versions/{version}/publish` 才解析、切分、Embedding 并发布。每个文档同时最多一个草稿；
+发布 v2 会把 v1 标记为 `RETIRED`，并通过不可变索引快照一次性替换该文档全部分块，搜索线程只会看到完整旧版或
+完整新版。`retire` 会移除当前索引，但版本内容和时间戳仍可查询。
+
+发布先完整构建新索引；若解析或 Embedding 失败，旧发布版本和旧索引保持不变，新版本继续为 `DRAFT`。
+四个 classpath 演示文档在启动时走同一服务创建并发布，因此默认 Agent 仍可直接运行。执行完整八步生命周期演示：
+
+```bash
+bash scripts/knowledge-lifecycle-demo.sh
+```
+
+该脚本会真实验证“草稿不可检索 → v1 发布 → v2 草稿不影响 v1 → v2 原子替换 → v2 下线不可检索”。
+详细 REST 命令见 [API_EXAMPLES.md](docs/API_EXAMPLES.md)。
+
 ## 可解释混合检索与离线评测
 
 `POST /api/v1/knowledge/search` 同时计算向量余弦分数和 BM25 词法分数，并按固定权重
@@ -285,7 +303,7 @@ src/main/java/com/hrniux/underwriting
 ├── demo       # 结构化虚构场景、完整性校验和中文目录 API
 ├── model      # Mock/OpenAI-compatible/路由模型网关
 ├── prompt     # 提示词版本管理和严格渲染
-├── rag        # 文档解析、切分、Embedding、混合检索与离线评测
+├── rag        # 知识版本发布、原子索引、Embedding、混合检索与离线评测
 ├── report     # 中文 Markdown 核保报告与安全转义
 ├── review     # 人工复核结果、关系分类、原子仓库与反馈指标
 ├── rule       # 确定性规则、风险分与决策下限
