@@ -3,6 +3,7 @@ package com.hrniux.underwriting.report;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,9 @@ import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.RiskLevel;
 import com.hrniux.underwriting.rule.RuleResult;
 import com.hrniux.underwriting.rule.RuleSeverity;
+import com.hrniux.underwriting.review.AgentReviewRelationship;
+import com.hrniux.underwriting.review.HumanReview;
+import com.hrniux.underwriting.review.HumanReviewOutcome;
 import com.hrniux.underwriting.tool.ToolCallStatus;
 import com.hrniux.underwriting.tool.ToolCallTrace;
 import com.hrniux.underwriting.tool.ToolName;
@@ -26,12 +30,18 @@ import com.hrniux.underwriting.tool.ToolName;
 public class UnderwritingMarkdownReportService {
 
     public String render(UnderwritingEvaluation evaluation) {
+        return render(evaluation, Optional.empty());
+    }
+
+    public String render(UnderwritingEvaluation evaluation, Optional<HumanReview> humanReview) {
         Objects.requireNonNull(evaluation, "evaluation must not be null");
+        Objects.requireNonNull(humanReview, "humanReview must not be null");
 
         StringBuilder report = new StringBuilder();
         appendHeader(report, evaluation);
         appendDecision(report, evaluation);
         appendDegradations(report, evaluation.degradations());
+        appendHumanReview(report, humanReview);
         appendNarrative(report, "模型摘要", evaluation.summary());
         appendList(report, "核保原因", evaluation.reasons());
         appendList(report, "建议动作", evaluation.recommendedActions());
@@ -48,7 +58,7 @@ public class UnderwritingMarkdownReportService {
 
     private void appendHeader(StringBuilder report, UnderwritingEvaluation evaluation) {
         report.append("# 财险智能核保评估报告\n\n")
-                .append("> 本报告根据一条已保存的核保评估确定性生成；下载不会重新执行模型或规则。\n\n")
+                .append("> 本报告根据已保存的核保评估和可选人工复核记录确定性生成；下载不会重新执行模型或规则。\n\n")
                 .append("## 基本信息\n\n")
                 .append("| 字段 | 内容 |\n")
                 .append("|---|---|\n");
@@ -64,10 +74,37 @@ public class UnderwritingMarkdownReportService {
         report.append("## 核保结论\n\n")
                 .append("| 项目 | 结果 |\n")
                 .append("|---|---|\n");
-        appendRow(report, "最终结论", decisionLabel(evaluation.decision()));
+        appendRow(report, "Agent 辅助建议", decisionLabel(evaluation.decision()));
         appendRow(report, "风险等级", riskLabel(evaluation.riskLevel()));
         appendRow(report, "风险分", evaluation.riskScore() + " / 100");
         report.append('\n');
+    }
+
+    private void appendHumanReview(StringBuilder report, Optional<HumanReview> humanReview) {
+        report.append("## 人工复核闭环\n\n");
+        if (humanReview.isEmpty()) {
+            report.append("- 尚未提交人工复核结论；Agent 输出仍是辅助建议。\n\n");
+            return;
+        }
+
+        HumanReview review = humanReview.orElseThrow();
+        report.append("| 字段 | 内容 |\n")
+                .append("|---|---|\n");
+        appendRow(report, "复核编号", code(review.id()));
+        appendRow(report, "复核人员编号", code(review.reviewerId()));
+        appendRow(report, "人工处理结论", reviewOutcomeLabel(review.outcome()));
+        appendRow(report, "与 Agent 建议关系", relationshipLabel(review.relationship()));
+        appendRow(report, "复核时间（UTC）", review.reviewedAt());
+        appendRow(report, "复核说明", review.comment());
+        report.append('\n')
+                .append("### 承保条件或补充资料\n\n");
+        if (review.conditions().isEmpty()) {
+            report.append("- 无\n\n");
+        }
+        else {
+            review.conditions().forEach(condition -> report.append("- ").append(safeText(condition)).append('\n'));
+            report.append('\n');
+        }
     }
 
     private void appendNarrative(StringBuilder report, String title, String value) {
@@ -297,6 +334,25 @@ public class UnderwritingMarkdownReportService {
 
     private String toolStatusLabel(ToolCallStatus status) {
         return label(status == ToolCallStatus.SUCCESS ? "成功" : "失败", status);
+    }
+
+    private String reviewOutcomeLabel(HumanReviewOutcome outcome) {
+        String chinese = switch (outcome) {
+            case APPROVED -> "同意承保";
+            case REJECTED -> "拒绝承保";
+            case MORE_INFORMATION_REQUIRED -> "要求补充资料";
+        };
+        return label(chinese, outcome);
+    }
+
+    private String relationshipLabel(AgentReviewRelationship relationship) {
+        String chinese = switch (relationship) {
+            case CONFIRMED -> "确认 Agent 建议";
+            case OVERRIDDEN -> "推翻 Agent 建议";
+            case RESOLVED_MANUAL_REVIEW -> "完成人工复核";
+            case CONTINUED_MANUAL_REVIEW -> "继续补充资料";
+        };
+        return label(chinese, relationship);
     }
 
     private String label(String chinese, Enum<?> value) {

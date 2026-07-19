@@ -16,7 +16,7 @@
 
 ### 第 2–3 分钟：展开一组规则、RAG 与轨迹
 
-进入 `P-1001`，点击“运行智能核保”，展示 70 分、四条规则、四条知识证据、七步 Agent 轨迹和六类工具调用，并说明规则结果不能被模型文本降低。最后点击“下载中文 Markdown 报告”，展示系统如何把同一份已保存结果变成可审计交付物。
+进入 `P-1001`，点击“运行智能核保”，展示 70 分、四条规则、四条知识证据、七步 Agent 轨迹和六类工具调用，并说明规则结果不能被模型文本降低。随后提交一条“同意附条件承保”的人工复核，最后下载 Markdown 报告，展示 Agent 原始建议与人工最终处置如何形成可审计交付物。
 
 ### 第 3–4 分钟：说明 REST、MCP 与模型边界
 
@@ -24,7 +24,7 @@
 
 ### 第 4–5 分钟：讲可靠性与生产化
 
-说明 `Idempotency-Key` 如何合并并发重复请求；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线；展示 Actuator 提交/耗时/决策/降级指标，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
+说明 `Idempotency-Key` 如何合并并发重复请求；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线；展示评估与人工复核六组 Actuator 指标，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
 
 ## 简历职责如何映射到代码
 
@@ -38,6 +38,7 @@
 | 可审计中文结果交付 | `UnderwritingMarkdownReportService`、`GET /api/v1/underwriting/evaluations/{evaluationId}/report` |
 | 幂等、并发单飞与运行指标 | `EvaluationSubmissionService`、`Idempotency-Key`、Actuator Metrics |
 | 内部系统故障分级与安全降级 | `ToolCriticality`、`ToolAttempt`、`DegradationNotice`、`degraded-demo` Profile |
+| 人工复核与 Agent 效果反馈闭环 | `HumanReviewService`、`HumanReviewRepository`、Review API、人工复核指标 |
 
 ## 常见面试问题
 
@@ -91,7 +92,7 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提
 
 ### Q13：如何评价 Agent 是否有效？
 
-离线看资料召回、规则一致性、建议完整性和事实引用；在线看平均处理时长、人工采纳率、转人工率、误放行率和赔付表现。模型输出必须用脱敏标注集和核保专家双评，不能只看通用语言指标。
+离线看资料召回、规则一致性、建议完整性和事实引用；在线看平均处理时长、人工采纳率、转人工率、误放行率和赔付表现。Demo 已把核保人结果建模为独立、不可覆盖的 `HumanReview`，确定性计算 `CONFIRMED`、`OVERRIDDEN`、`RESOLVED_MANUAL_REVIEW` 和 `CONTINUED_MANUAL_REVIEW`，并统计结果分布与人工时延。它能形成评测数据入口，但生产上必须先做权限、脱敏、用途审批和样本版本治理，不能直接用原始复核记录训练模型。
 
 ### Q14：如果要支持多轮对话怎么做？
 
@@ -99,12 +100,13 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提
 
 ### Q15：为什么报告由后端生成 Markdown，而不是前端拼接或直接生成 PDF？
 
-后端直接接收 `UnderwritingEvaluation`，因此 REST、浏览器和未来批处理可以复用同一口径，也能用单元测试验证中文标签、空数据和 Markdown 转义。Markdown 无需字体和分页依赖，适合代码仓库、评审和面试；前端只绑定下载地址，不复制领域格式。PDF 可以在生产上作为后续渲染层，但不应让演示项目先承担额外复杂度。`GET /api/v1/underwriting/evaluations/{evaluationId}/report` 只读取已保存结果，不会重复执行模型或规则。
+后端直接接收 `UnderwritingEvaluation` 和可选 `HumanReview`，因此 REST、浏览器和未来批处理可以复用同一口径，也能用单元测试验证中文标签、空数据和 Markdown 转义。Markdown 无需字体和分页依赖，适合代码仓库、评审和面试；前端只绑定下载地址，不复制领域格式。PDF 可以在生产上作为后续渲染层，但不应让演示项目先承担额外复杂度。`GET /api/v1/underwriting/evaluations/{evaluationId}/report` 只读取已保存结果与复核记录，不会重复执行模型或规则。
 
 ## 容易被追问的取舍
 
 - Hash Embedding 是演示替身，不应包装成生产语义模型。
 - 当前仓库是内存实现，重启丢失；重点是接口隔离与流程。
+- 人工复核使用演示人员编号且没有 RBAC/电子签名，不能冒充真实授权审批。
 - 规则阈值和条款均为虚构，不代表真实公司规则。
 - Agent 自动化的是辅助决策，不是绕过人工授权。
 

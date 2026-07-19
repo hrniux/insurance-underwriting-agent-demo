@@ -20,6 +20,7 @@ import com.hrniux.underwriting.agent.UnderwritingAgentOrchestrator;
 import com.hrniux.underwriting.agent.UnderwritingEvaluation;
 import com.hrniux.underwriting.api.ApiDtos.EvaluationApiRequest;
 import com.hrniux.underwriting.report.UnderwritingMarkdownReportService;
+import com.hrniux.underwriting.review.HumanReviewService;
 
 import jakarta.validation.Valid;
 
@@ -30,14 +31,17 @@ public class UnderwritingEvaluationController {
     private final UnderwritingAgentOrchestrator orchestrator;
     private final EvaluationSubmissionService submissions;
     private final UnderwritingMarkdownReportService reportService;
+    private final HumanReviewService reviews;
 
     public UnderwritingEvaluationController(
             UnderwritingAgentOrchestrator orchestrator,
             EvaluationSubmissionService submissions,
-            UnderwritingMarkdownReportService reportService) {
+            UnderwritingMarkdownReportService reportService,
+            HumanReviewService reviews) {
         this.orchestrator = orchestrator;
         this.submissions = submissions;
         this.reportService = reportService;
+        this.reviews = reviews;
     }
 
     @PostMapping
@@ -66,7 +70,7 @@ public class UnderwritingEvaluationController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/markdown;charset=UTF-8"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-                .body(reportService.render(evaluation));
+                .body(reportService.render(evaluation, reviews.find(evaluationId)));
     }
 
     @GetMapping

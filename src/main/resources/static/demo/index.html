@@ -45,9 +45,36 @@
       <div id="result-content" hidden>
         <div id="decision-summary"></div>
         <div id="degradation-list"></div>
+        <section id="human-review-panel" class="human-review-panel result-section" aria-labelledby="human-review-heading" hidden>
+          <h3 id="human-review-heading">人工复核反馈闭环</h3>
+          <p id="review-guidance">记录核保人的最终处理，不覆盖 Agent 原始建议。</p>
+          <form id="review-form" class="review-form">
+            <label for="reviewer-id">复核人员编号</label>
+            <input id="reviewer-id" name="reviewerId" value="UW-DEMO-001" maxlength="64" required>
+
+            <label for="review-outcome">人工处理结论</label>
+            <select id="review-outcome" name="outcome" required>
+              <option value="APPROVED">同意承保</option>
+              <option value="REJECTED">拒绝承保</option>
+              <option value="MORE_INFORMATION_REQUIRED">要求补充资料</option>
+            </select>
+
+            <label for="review-comment">复核说明</label>
+            <textarea id="review-comment" name="comment" maxlength="1000" rows="3" required
+              placeholder="例如：整改材料已核验，同意附条件承保。"></textarea>
+
+            <label for="review-conditions">承保条件或补充资料（使用分号分隔，选填）</label>
+            <input id="review-conditions" name="conditions" maxlength="1000"
+              placeholder="例如：提高免赔额；每季度复查排水设施">
+
+            <button id="submit-review" type="submit">提交不可覆盖的复核结论</button>
+          </form>
+          <p id="review-status" aria-live="polite">尚未提交人工复核结论。</p>
+          <div id="review-result" hidden></div>
+        </section>
         <div id="report-action" class="report-action" hidden>
           <a id="download-report" class="report-download">下载中文 Markdown 报告</a>
-          <p>报告来自当前已保存评估，不会重复执行模型或规则。</p>
+          <p>报告来自当前已保存评估和可选人工复核记录，不会重复执行模型或规则。</p>
         </div>
         <div id="reason-list"></div>
         <div id="action-list"></div>

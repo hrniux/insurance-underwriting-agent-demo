@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +20,9 @@ import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.RiskLevel;
 import com.hrniux.underwriting.rule.RuleResult;
 import com.hrniux.underwriting.rule.RuleSeverity;
+import com.hrniux.underwriting.review.AgentReviewRelationship;
+import com.hrniux.underwriting.review.HumanReview;
+import com.hrniux.underwriting.review.HumanReviewOutcome;
 import com.hrniux.underwriting.tool.ToolCallStatus;
 import com.hrniux.underwriting.tool.ToolCallTrace;
 import com.hrniux.underwriting.tool.ToolName;
@@ -36,6 +40,8 @@ class UnderwritingMarkdownReportServiceTest {
                 "人工复核（`MANUAL_REVIEW`）",
                 "高风险（`HIGH`）",
                 "## 数据质量与安全降级",
+                "## 人工复核闭环",
+                "尚未提交人工复核结论",
                 "`NON_CRITICAL_TOOL_UNAVAILABLE`",
                 "灾害风险工具（`GET_DISASTER_RISK`）",
                 "人工复核（`MANUAL_REVIEW`）",
@@ -45,6 +51,30 @@ class UnderwritingMarkdownReportServiceTest {
                 "保单信息工具（`GET_POLICY`）",
                 "## 模型执行信息",
                 "本报告仅用于技术学习和面试演示");
+    }
+
+    @Test
+    void rendersTheHumanDecisionSeparatelyFromTheAgentRecommendation() {
+        HumanReview review = new HumanReview(
+                "REVIEW-1",
+                "EVAL-REPORT-1",
+                "UW-DEMO-001",
+                HumanReviewOutcome.APPROVED,
+                AgentReviewRelationship.RESOLVED_MANUAL_REVIEW,
+                "整改证明已核验 | 同意附条件承保",
+                List.of("提高免赔额", "季度复查"),
+                Instant.parse("2026-07-17T06:30:00Z"));
+
+        String report = service.render(evaluationWithAuditDetails(), Optional.of(review));
+
+        assertThat(report).contains(
+                "Agent 辅助建议",
+                "人工复核（`MANUAL_REVIEW`）",
+                "同意承保（`APPROVED`）",
+                "完成人工复核（`RESOLVED_MANUAL_REVIEW`）",
+                "整改证明已核验 \\| 同意附条件承保",
+                "- 提高免赔额",
+                "- 季度复查");
     }
 
     @Test

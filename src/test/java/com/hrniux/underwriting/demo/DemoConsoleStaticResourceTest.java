@@ -65,6 +65,12 @@ class DemoConsoleStaticResourceTest {
                 "id=\"comparison-summary\"",
                 "id=\"comparison-grid\"",
                 "id=\"degradation-list\"",
+                "id=\"human-review-panel\"",
+                "id=\"review-form\"",
+                "id=\"reviewer-id\"",
+                "id=\"review-outcome\"",
+                "id=\"review-comment\"",
+                "id=\"submit-review\"",
                 "id=\"report-action\"",
                 "id=\"download-report\"",
                 "下载中文 Markdown 报告",
@@ -89,6 +95,10 @@ class DemoConsoleStaticResourceTest {
                         "renderComparisonSummary",
                         "renderComparisonCard",
                         "renderDegradations",
+                        "renderHumanReviewPanel",
+                        "async function submitHumanReview(event)",
+                        "人工复核结论已保存且不可覆盖",
+                        "MORE_INFORMATION_REQUIRED: \"要求补充资料\"",
                         "DATA_SOURCE_DEGRADED",
                         "安全降级已覆盖常规场景预期",
                         "安全覆盖",
@@ -135,6 +145,9 @@ class DemoConsoleStaticResourceTest {
                         ".report-action",
                         ".report-download",
                         ".degradation-notice",
+                        ".human-review-panel",
+                        ".review-form",
+                        ".human-review-record",
                         ".step-item[data-status=\"DEGRADED\"]")
                 .doesNotContain("@import", "url(http://", "url(https://");
     }

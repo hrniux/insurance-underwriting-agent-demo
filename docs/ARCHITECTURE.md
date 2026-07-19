@@ -16,6 +16,7 @@ flowchart LR
     DemoUser["浏览器演示用户"] --> Console["静态演示层 /demo/"]
     Console --> DemoAPI
     Console --> EvaluationAPI["核保评估 /api/v1/underwriting/evaluations"]
+    Console --> ReviewAPI["人工复核 /evaluations/{id}/review"]
     API --> Agent["UnderwritingAgentOrchestrator"]
     EvaluationAPI --> Submission["EvaluationSubmissionService"]
     Submission --> Agent
@@ -36,13 +37,17 @@ flowchart LR
     Router --> Mock["Deterministic Mock"]
     Router --> Compatible["OpenAI-compatible Gateway"]
     Agent --> Evaluation["EvaluationRepository"]
+    ReviewAPI --> ReviewService["HumanReviewService"]
+    ReviewService --> Evaluation
+    ReviewService --> ReviewRepository["HumanReviewRepository"]
+    ReviewService --> Metrics
 ```
 
 ### 静态演示层
 
 `/demo/` 由 Spring Boot 直接提供 HTML、原生 JavaScript 和 CSS，不需要 Node.js、外部字体或前端构建。页面先调用 `/api/v1/demo/scenarios` 读取四组虚构场景，用户点击“运行智能核保”后再调用 `/api/v1/underwriting/evaluations`。动态接口内容统一通过安全 DOM API 写入页面，不作为 HTML 字符串执行。
 
-静态演示层只负责把业务事实、结论、规则命中、知识证据和轨迹翻译成更容易理解的中文界面，不复制核保逻辑。场景事实仍来自 `DemoScenarioRepository`，最终结论仍由真实七步 Agent、规则引擎和模型网关共同生成。
+静态演示层只负责把业务事实、结论、规则命中、知识证据和轨迹翻译成更容易理解的中文界面，不复制核保逻辑。场景事实仍来自 `DemoScenarioRepository`，Agent 建议仍由真实七步流程、规则引擎和模型网关共同生成；人工复核表单调用独立 Review API，不在浏览器内修改评估结果。
 
 ## 3. 结构化虚构场景
 
@@ -137,7 +142,7 @@ MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/m
 这是单实例 Demo 实现。缓存通过最大条数和完成后保留期限制内存，默认 1,000 条、24 小时。
 多实例生产环境应把同一状态机迁移到 Redis 或带唯一约束的数据库，并保存最终响应或评估编号。
 
-提交服务同时写入四组低基数 Micrometer 指标：
+评估提交服务写入四组低基数 Micrometer 指标：
 
 | 指标 | 标签 | 含义 |
 |---|---|---|
@@ -148,7 +153,33 @@ MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/m
 
 `/actuator/metrics/{metricName}` 可直接检查本机指标。生产环境再接 Prometheus Registry 和告警系统。
 
-## 10. 一致性与生产演进
+## 10. 人工复核反馈闭环
+
+`POST /api/v1/underwriting/evaluations/{evaluationId}/review` 在 Agent 评估之外创建一条不可变
+`HumanReview`。它不会覆盖 `UnderwritingEvaluation.decision`，因此报告可以同时展示“Agent 辅助建议”
+和“人工处理结论”，审计时不会丢失模型与规则当时给出的原始判断。
+
+`HumanReviewRepository.create` 使用 `putIfAbsent` 原子保证一份评估最多只有一条当前演示结论；第二次
+提交返回 `409 HUMAN_REVIEW_ALREADY_EXISTS`。关系分类不交给前端或模型，而是由服务端确定性计算：
+
+| Agent 建议与人工结果 | `relationship` | 含义 |
+|---|---|---|
+| 自动通过/拒保与人工结果一致 | `CONFIRMED` | 人工确认 Agent 建议 |
+| 自动通过/拒保被人工改变 | `OVERRIDDEN` | 人工推翻 Agent 建议 |
+| 人工复核最终变为承保或拒保 | `RESOLVED_MANUAL_REVIEW` | 人工完成处置 |
+| 人工复核仍需更多资料 | `CONTINUED_MANUAL_REVIEW` | 继续停留在人工环节 |
+
+复核服务额外暴露两组低基数指标：
+
+| 指标 | 标签 | 含义 |
+|---|---|---|
+| `underwriting.human.reviews` | `outcome`、`relationship` | 人工结论与采纳/推翻关系分布 |
+| `underwriting.human.review.delay` | `outcome`、`relationship` | 从 Agent 评估完成到人工复核的时延 |
+
+标签不包含人员编号、评估编号或保单号。`GET /api/v1/underwriting/reviews` 可作为本地反馈导出入口；
+生产环境必须增加机构权限、脱敏、用途审批和数据留存控制，不能直接把原始业务记录送去训练模型。
+
+## 11. 一致性与生产演进
 
 Demo 仓库使用 `ConcurrentHashMap`、不可变 record、复制后返回和单实例幂等单飞，避免最明显的并发修改与重复提交问题。真正生产化还需要：
 
@@ -157,14 +188,15 @@ Demo 仓库使用 `ConcurrentHashMap`、不可变 record、复制后返回和单
 - 异步任务、超时取消、补偿与死信队列；
 - RAG 文档状态机（草稿、审核、发布、下线）和索引版本；
 - 租户隔离、RBAC、脱敏、全链路审计和数据留存策略；
-- Prompt/模型灰度、离线评测集、召回指标和人工反馈闭环。
+- Prompt/模型灰度、离线评测集、召回指标和经过审批的脱敏反馈样本集。
 
-## 11. 主要扩展点
+## 12. 主要扩展点
 
 | 接口 | 当前实现 | 可替换实现 |
 |---|---|---|
 | `SessionRepository` | 内存 | Redis / PostgreSQL |
 | `EvaluationRepository` | 内存 | PostgreSQL / 审计仓库 |
+| `HumanReviewRepository` | 内存、单评估原子创建 | PostgreSQL 追加事件 / 工作流任务库 |
 | `EmbeddingService` | Hash | 企业 Embedding API |
 | `VectorStore` | 内存 | PGVector / Milvus |
 | `UnderwritingFactTools` | JSON 场景仓库 | 内部 REST/gRPC/MQ 适配器 |

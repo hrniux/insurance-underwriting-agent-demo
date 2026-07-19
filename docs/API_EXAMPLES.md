@@ -94,6 +94,15 @@ curl -sS "$BASE_URL/actuator/metrics/underwriting.evaluation.decisions" | python
 提交计数和耗时按 `outcome=created|replayed|conflict|failed` 聚合；决策计数只记录真实 Agent
 执行，按 `decision` 和 `risk_level` 聚合，不把重放请求重复计入业务结论。
 
+提交人工复核后还可以查询：
+
+```bash
+curl -sS "$BASE_URL/actuator/metrics/underwriting.human.reviews" | python3 -m json.tool
+curl -sS "$BASE_URL/actuator/metrics/underwriting.human.review.delay" | python3 -m json.tool
+```
+
+二者只使用 `outcome` 和 `relationship` 枚举标签，不使用人员、评估或保单编号。
+
 ### 可重复的灾害平台降级演示
 
 先停止普通进程，然后使用专用 Profile 启动：
@@ -141,6 +150,52 @@ curl -sS -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
 ```bash
 curl -sS "$BASE_URL/actuator/metrics/underwriting.agent.degradations" | python3 -m json.tool
 ```
+
+### 人工复核反馈 `/{evaluationId}/review`
+
+先创建一条需要人工复核的虚构评估：
+
+```bash
+evaluation_json=$(curl -sS --fail-with-body \
+  -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
+  -H 'Content-Type: application/json' \
+  -d '{"policyNo":"P-1001","question":"请人工确认是否可以附条件承保。"}')
+
+evaluation_id=$(printf '%s' "$evaluation_json" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -sS --fail-with-body \
+  -X POST "$BASE_URL/api/v1/underwriting/evaluations/${evaluation_id}/review" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "reviewerId":"UW-DEMO-001",
+    "outcome":"APPROVED",
+    "comment":"整改材料已核验，同意附条件承保。",
+    "conditions":["提高免赔额至 10 万元","每季度复查排水设施"]
+  }' | python3 -m json.tool
+```
+
+关键响应片段：
+
+```json
+{
+  "evaluationId": "EVAL-...",
+  "reviewerId": "UW-DEMO-001",
+  "outcome": "APPROVED",
+  "relationship": "RESOLVED_MANUAL_REVIEW",
+  "conditions": ["提高免赔额至 10 万元", "每季度复查排水设施"]
+}
+```
+
+读取单条复核或导出当前 Demo 中的全部复核：
+
+```bash
+curl -sS "$BASE_URL/api/v1/underwriting/evaluations/${evaluation_id}/review" | python3 -m json.tool
+curl -sS "$BASE_URL/api/v1/underwriting/reviews" | python3 -m json.tool
+```
+
+同一评估只允许创建一次；再次 `POST` 返回 `409 HUMAN_REVIEW_ALREADY_EXISTS`。系统保留原始 Agent
+建议，不把人工结果回写覆盖。生产环境导出反馈前必须进行权限校验、字段脱敏、用途审批和留存治理。
 
 ### 下载中文 Markdown 报告 `/{evaluationId}/report`
 

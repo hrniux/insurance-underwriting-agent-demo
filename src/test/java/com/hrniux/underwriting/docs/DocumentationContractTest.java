@@ -63,6 +63,8 @@ class DocumentationContractTest {
         assertThat(examples).contains(
                 "/api/v1/sessions",
                 "/api/v1/underwriting/evaluations",
+                "/api/v1/underwriting/evaluations/${evaluation_id}/review",
+                "/api/v1/underwriting/reviews",
                 "/api/v1/knowledge/documents",
                 "/api/v1/knowledge/search",
                 "/api/v1/prompts",
@@ -115,6 +117,7 @@ class DocumentationContractTest {
                 "演示场景目录",
                 "RAG 知识检索",
                 "共享业务工具",
+                "人工复核反馈闭环",
                 "${title}（${policy_no}）",
                 "P-1001",
                 "P-2001",
@@ -210,6 +213,34 @@ class DocumentationContractTest {
         assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
                 "UNKNOWN",
                 "安全降级状态");
+    }
+
+    @Test
+    void documentsTheImmutableHumanReviewFeedbackLoop() throws IOException {
+        assertThat(read("README.md")).contains(
+                "人工复核反馈闭环",
+                "HUMAN_REVIEW_ALREADY_EXISTS",
+                "underwriting.human.reviews");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "HumanReviewRepository",
+                "putIfAbsent",
+                "RESOLVED_MANUAL_REVIEW",
+                "underwriting.human.review.delay");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "/{evaluationId}/review",
+                "/api/v1/underwriting/reviews",
+                "用途审批");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "HumanReviewService",
+                "人工采纳率",
+                "电子签名");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "HumanReviewOutcome",
+                "AgentReviewRelationship",
+                "为什么人工复核不能再次覆盖");
+        assertThat(read("scripts/demo.sh")).contains(
+                "[6/9] 人工复核反馈闭环",
+                "underwriting.human.reviews");
     }
 
     private String read(String path) throws IOException {

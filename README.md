@@ -27,7 +27,8 @@
 - REST + MCP：REST 用于管理和调试，MCP 用于 Agent 工具发现与调用，两者复用同一业务实现。
 - 中文交互演示：无需复制命令即可选择四组虚构场景，运行真实核保并阅读规则、证据和七步轨迹。
 - 中文核保报告：把已保存的单次评估导出为 Markdown，完整保留结论、规则、证据、七步轨迹、工具记录和模型元数据。
-- 运行指标：Actuator 暴露提交结果、执行耗时、决策分布和安全降级四组低基数 Micrometer 指标。
+- 人工复核闭环：核保人可确认、推翻或要求补充资料；复核记录原子创建、不可覆盖，并进入报告和反馈导出接口。
+- 运行指标：Actuator 暴露评估提交、执行耗时、决策分布、安全降级、人工复核分布和复核时延六组低基数 Micrometer 指标。
 
 ## 快速启动
 
@@ -88,6 +89,29 @@ curl --fail http://localhost:8080/actuator/metrics/underwriting.agent.degradatio
 Micrometer 指标也会记录原因。正常 Profile 下四个场景结果完全不变。
 演示台会把这类结果标成“安全降级已覆盖常规场景预期”，而不是普通的结果不一致。
 
+### 人工复核反馈闭环
+
+任意单场景评估完成后，演示台会显示“人工复核反馈闭环”。核保人可以记录同意承保、拒绝承保或
+要求补充资料。系统不会修改 Agent 原始建议，而是创建一条单独、不可覆盖的 `HumanReview`，并计算
+`CONFIRMED`、`OVERRIDDEN`、`RESOLVED_MANUAL_REVIEW` 或 `CONTINUED_MANUAL_REVIEW` 关系。
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/v1/underwriting/evaluations/EVAL-替换为真实编号/review \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "reviewerId":"UW-DEMO-001",
+    "outcome":"APPROVED",
+    "comment":"整改材料已核验，同意附条件承保。",
+    "conditions":["提高免赔额","季度复查"]
+  }' | python3 -m json.tool
+
+curl --fail http://localhost:8080/actuator/metrics/underwriting.human.reviews
+```
+
+同一评估第二次提交会返回 `409 HUMAN_REVIEW_ALREADY_EXISTS`，避免覆盖审计结论。重新下载该评估的
+Markdown 报告即可看到 Agent 辅助建议与人工最终处理的并列记录。
+
 浏览器访问：
 
 - 中文智能核保演示台：<http://localhost:8080/demo/>（推荐首次体验）
@@ -103,9 +127,10 @@ Micrometer 指标也会记录原因。正常 Profile 下四个场景结果完全
 1. 从左侧选择 `P-1001` 至 `P-4001` 任一虚构场景；
 2. 阅读保单、报价、历史、查勘和灾害五类业务事实；
 3. 点击“运行智能核保”，查看实际结论、预期结论、规则命中、知识证据和七步执行轨迹；
-4. 点击“下载中文 Markdown 报告”，保存当前评估的可审计结果；
-5. 点击“对比全部场景”，让四组虚构保单顺序调用同一个真实核保接口；
-6. 从对比总览确认自动通过 1、人工复核 2、拒保 1，风险分范围为 10–70，再进入任一场景查看五类事实。
+4. 在“人工复核反馈闭环”中记录核保人的最终处理，观察它如何与 Agent 建议并列保留；
+5. 点击“下载中文 Markdown 报告”，保存包含人工复核记录的可审计结果；
+6. 点击“对比全部场景”，让四组虚构保单顺序调用同一个真实核保接口；
+7. 从对比总览确认自动通过 1、人工复核 2、拒保 1，风险分范围为 10–70，再进入任一场景查看五类事实。
 
 页面数据全部来自 `underwriting-scenarios.json`，仅用于教学和面试演示，不可用于真实承保判断。页面不复制业务判断，而是调用与 API 相同的核保服务。
 
@@ -185,6 +210,7 @@ src/main/java/com/hrniux/underwriting
 ├── prompt     # 提示词版本管理和严格渲染
 ├── rag        # 文档解析、切分、Embedding、向量检索
 ├── report     # 中文 Markdown 核保报告与安全转义
+├── review     # 人工复核结果、关系分类、原子仓库与反馈指标
 ├── rule       # 确定性规则、风险分与决策下限
 ├── session    # 会话和消息
 ├── tool       # 虚构内部系统、注册表、MCP 工具
@@ -205,6 +231,7 @@ src/main/java/com/hrniux/underwriting
 | Demo 实现 | 生产替换方向 |
 |---|---|
 | 内存会话/评估仓库 | Redis 会话 + PostgreSQL 审计与评估表 |
+| 单条不可覆盖的内存复核记录 | PostgreSQL 追加式复核事件、RBAC 与电子签名 |
 | Hash Embedding | 企业 Embedding 模型或合规云模型 |
 | 内存向量库 | PostgreSQL + PGVector、Milvus 或 Elasticsearch |
 | JSON 场景仓库 + 分级失败工具 | 带超时/熔断/舱壁和明确异常分类的内部 REST/gRPC/MQ 适配器 |
@@ -212,7 +239,7 @@ src/main/java/com/hrniux/underwriting
 | 环境变量密钥 | Vault/KMS、短期凭证、密钥轮转和出口网关 |
 | Micrometer 单实例指标 | Prometheus Registry、OpenTelemetry Trace、模型成本与召回质量看板 |
 
-生产环境还应加入租户/机构权限、字段级脱敏、操作审计、知识发布审批、Prompt 灰度、模型输出评测、人工反馈闭环和灾备策略。
+生产环境还应加入租户/机构权限、字段级脱敏、操作审计、知识发布审批、Prompt 灰度、脱敏反馈样本治理、模型输出评测和灾备策略。
 
 ## 免责声明
 

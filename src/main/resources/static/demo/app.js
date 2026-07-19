@@ -8,8 +8,10 @@ const state = {
   selectedPolicyNo: null,
   detail: null,
   evaluation: null,
+  review: null,
   detailController: null,
   evaluationController: null,
+  reviewController: null,
   comparisonController: null,
   comparisonResults: []
 };
@@ -82,6 +84,17 @@ const LABELS = {
     GET_SURVEY_REPORT: "风险查勘工具",
     GET_DISASTER_RISK: "灾害风险工具",
     VALIDATE_RULES: "规则校验工具"
+  },
+  reviewOutcomes: {
+    APPROVED: "同意承保",
+    REJECTED: "拒绝承保",
+    MORE_INFORMATION_REQUIRED: "要求补充资料"
+  },
+  reviewRelationships: {
+    CONFIRMED: "确认 Agent 建议",
+    OVERRIDDEN: "推翻 Agent 建议",
+    RESOLVED_MANUAL_REVIEW: "完成人工复核",
+    CONTINUED_MANUAL_REVIEW: "继续补充资料"
   }
 };
 
@@ -413,6 +426,101 @@ function configureReportDownload(evaluationId) {
   action.hidden = false;
 }
 
+function defaultReviewOutcome(decision) {
+  if (decision === "REJECT") return "REJECTED";
+  if (decision === "MANUAL_REVIEW") return "MORE_INFORMATION_REQUIRED";
+  return "APPROVED";
+}
+
+function renderHumanReviewPanel(evaluation) {
+  state.review = null;
+  const panel = find("#human-review-panel");
+  const form = find("#review-form");
+  form.hidden = false;
+  form.reset();
+  find("#reviewer-id").value = "UW-DEMO-001";
+  find("#review-outcome").value = defaultReviewOutcome(evaluation.decision);
+  find("#review-guidance").textContent = evaluation.decision === "MANUAL_REVIEW"
+    ? "Agent 已要求人工复核。请记录最终处理；该记录创建后不可覆盖。"
+    : "可由核保人确认或推翻 Agent 建议；原始建议始终保留。";
+  find("#review-status").textContent = "尚未提交人工复核结论。";
+  find("#review-result").hidden = true;
+  find("#review-result").replaceChildren();
+  find("#submit-review").disabled = false;
+  panel.hidden = false;
+}
+
+function renderHumanReview(review) {
+  const result = find("#review-result");
+  const conditions = Array.isArray(review.conditions) && review.conditions.length
+    ? review.conditions.join("；")
+    : "无";
+  const card = el("article", "human-review-record");
+  card.append(
+    el("p", "human-review-record__code", text(review.id)),
+    el("h4", null, label("reviewOutcomes", review.outcome)),
+    el("p", "human-review-record__relationship", label("reviewRelationships", review.relationship)),
+    el("p", null, review.comment),
+    el("p", "human-review-record__meta", `复核人员：${text(review.reviewerId)} · 条件/资料：${conditions}`),
+    el("p", "human-review-record__meta", `复核时间：${text(review.reviewedAt)}`)
+  );
+  setChildren(result, [card]);
+  result.hidden = false;
+  find("#review-form").hidden = true;
+  find("#review-status").textContent = "人工复核结论已保存且不可覆盖；重新下载报告即可看到闭环记录。";
+}
+
+function reviewConditions() {
+  return find("#review-conditions").value
+    .split(/[;；\n]/)
+    .map(value => value.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+async function submitHumanReview(event) {
+  event.preventDefault();
+  if (!state.evaluation || state.reviewController) return;
+
+  const evaluationId = state.evaluation.id;
+  const controller = new AbortController();
+  state.reviewController = controller;
+  const button = find("#submit-review");
+  button.disabled = true;
+  find("#review-form").setAttribute("aria-busy", "true");
+  find("#review-status").textContent = "正在保存人工复核结论……";
+
+  try {
+    const review = await requestJson(
+      `${EVALUATION_API}/${encodeURIComponent(evaluationId)}/review`,
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reviewerId: find("#reviewer-id").value.trim(),
+          outcome: find("#review-outcome").value,
+          comment: find("#review-comment").value.trim(),
+          conditions: reviewConditions()
+        })
+      }
+    );
+    if (state.reviewController !== controller || state.evaluation?.id !== evaluationId) return;
+    state.review = review;
+    renderHumanReview(review);
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      find("#review-status").textContent = `复核提交失败：${text(error.message)}`;
+      button.disabled = false;
+    }
+  } finally {
+    if (state.reviewController === controller) {
+      state.reviewController = null;
+      find("#review-form").removeAttribute("aria-busy");
+    }
+  }
+}
+
 function renderEvaluation(evaluation, expected) {
   renderDecisionSummary(evaluation, expected);
   renderDegradations(Array.isArray(evaluation.degradations) ? evaluation.degradations : []);
@@ -422,6 +530,7 @@ function renderEvaluation(evaluation, expected) {
   renderEvidence(Array.isArray(evaluation.evidence) ? evaluation.evidence : []);
   renderStepTraces(Array.isArray(evaluation.stepTraces) ? evaluation.stepTraces : []);
   renderToolTraces(Array.isArray(evaluation.toolTraces) ? evaluation.toolTraces : []);
+  renderHumanReviewPanel(evaluation);
   configureReportDownload(evaluation.id);
   find("#result-content").hidden = false;
   find("#evaluation-status").textContent = `核保完成，评估编号：${text(evaluation.id)}`;
@@ -590,12 +699,22 @@ function showError(message) {
 }
 
 function resetEvaluation() {
+  state.reviewController?.abort();
+  state.reviewController = null;
+  state.review = null;
   state.evaluation = null;
   find("#result-content").hidden = true;
   find("#report-action").hidden = true;
   const reportLink = find("#download-report");
   reportLink.removeAttribute("href");
   reportLink.removeAttribute("download");
+  find("#human-review-panel").hidden = true;
+  find("#review-form").reset();
+  find("#review-form").removeAttribute("aria-busy");
+  find("#review-form").hidden = false;
+  find("#review-result").hidden = true;
+  find("#review-result").replaceChildren();
+  find("#submit-review").disabled = false;
   [
     "#decision-summary",
     "#degradation-list",
@@ -753,4 +872,5 @@ async function initialize() {
 
 find("#run-evaluation").addEventListener("click", runEvaluation);
 find("#run-comparison").addEventListener("click", runComparison);
+find("#review-form").addEventListener("submit", submitHumanReview);
 initialize();
