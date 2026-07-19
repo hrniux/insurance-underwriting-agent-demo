@@ -66,6 +66,24 @@ class OpenAiCompatibleModelGatewayTest {
     }
 
     @Test
+    void preservesWarningsAndReturnsTargetedRecoveryActions() {
+        server.enqueue(success("存在数据缺失，建议人工复核"));
+        OpenAiCompatibleModelGateway gateway = gateway(1, Duration.ZERO, Duration.ofSeconds(1));
+        ModelRequest request = new ModelRequest(
+                "请分析保单",
+                new RuleEvaluation(Decision.MANUAL_REVIEW, RiskLevel.LOW, 10, List.of()),
+                List.of("示例证据"),
+                List.of("灾害风险数据暂时不可用"));
+
+        ModelResponse response = gateway.generate(request);
+
+        assertThat(response.reasons()).contains("灾害风险数据暂时不可用");
+        assertThat(response.recommendedActions()).containsExactly(
+                "补充并核验缺失的外部灾害风险数据",
+                "由人工核保人员确认完整资料后重新评估");
+    }
+
+    @Test
     void doesNotRetryAClientError() {
         server.enqueue(new MockResponse().setResponseCode(400).setBody("bad request"));
 
@@ -99,7 +117,7 @@ class OpenAiCompatibleModelGatewayTest {
 
     private ModelRequest request() {
         return new ModelRequest("请分析保单", new RuleEvaluation(
-                Decision.MANUAL_REVIEW, RiskLevel.HIGH, 70, List.of()), List.of("示例证据"));
+                Decision.MANUAL_REVIEW, RiskLevel.HIGH, 70, List.of()), List.of("示例证据"), List.of());
     }
 
     private MockResponse success(String content) {

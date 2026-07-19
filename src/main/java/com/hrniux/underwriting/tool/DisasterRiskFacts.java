@@ -19,4 +19,14 @@ public record DisasterRiskFacts(
         Objects.requireNonNull(fire, "fire must not be null");
         Objects.requireNonNull(dataDate, "dataDate must not be null");
     }
+
+    public static DisasterRiskFacts unavailable(String policyNo, LocalDate dataDate) {
+        return new DisasterRiskFacts(
+                policyNo,
+                "UNAVAILABLE",
+                HazardLevel.UNKNOWN,
+                HazardLevel.UNKNOWN,
+                HazardLevel.UNKNOWN,
+                dataDate);
+    }
 }

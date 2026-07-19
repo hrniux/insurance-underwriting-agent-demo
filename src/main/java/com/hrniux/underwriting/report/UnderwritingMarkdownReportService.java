@@ -7,6 +7,7 @@ import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 import com.hrniux.underwriting.agent.AgentStep;
+import com.hrniux.underwriting.agent.DegradationNotice;
 import com.hrniux.underwriting.agent.Evidence;
 import com.hrniux.underwriting.agent.StepStatus;
 import com.hrniux.underwriting.agent.StepTrace;
@@ -30,6 +31,7 @@ public class UnderwritingMarkdownReportService {
         StringBuilder report = new StringBuilder();
         appendHeader(report, evaluation);
         appendDecision(report, evaluation);
+        appendDegradations(report, evaluation.degradations());
         appendNarrative(report, "模型摘要", evaluation.summary());
         appendList(report, "核保原因", evaluation.reasons());
         appendList(report, "建议动作", evaluation.recommendedActions());
@@ -71,6 +73,25 @@ public class UnderwritingMarkdownReportService {
     private void appendNarrative(StringBuilder report, String title, String value) {
         report.append("## ").append(title).append("\n\n")
                 .append(safeText(value)).append("\n\n");
+    }
+
+    private void appendDegradations(StringBuilder report, List<DegradationNotice> degradations) {
+        report.append("## 数据质量与安全降级\n\n");
+        if (degradations.isEmpty()) {
+            report.append("- 本次评估未发生数据源降级。\n\n");
+            return;
+        }
+        report.append("| 告警编码 | 工具 | 工具错误码 | 决策下限 | 处置说明 |\n")
+                .append("|---|---|---|---|---|\n");
+        for (DegradationNotice degradation : degradations) {
+            appendRow(report,
+                    code(degradation.code()),
+                    toolLabel(degradation.toolName()),
+                    code(degradation.errorCode()),
+                    decisionLabel(degradation.decisionFloor()),
+                    degradation.message());
+        }
+        report.append('\n');
     }
 
     private void appendList(StringBuilder report, String title, List<String> values) {
@@ -254,7 +275,12 @@ public class UnderwritingMarkdownReportService {
     }
 
     private String stepStatusLabel(StepStatus status) {
-        return label(status == StepStatus.SUCCESS ? "成功" : "失败", status);
+        String chinese = switch (status) {
+            case SUCCESS -> "成功";
+            case DEGRADED -> "降级完成";
+            case FAILED -> "失败";
+        };
+        return label(chinese, status);
     }
 
     private String toolLabel(ToolName tool) {

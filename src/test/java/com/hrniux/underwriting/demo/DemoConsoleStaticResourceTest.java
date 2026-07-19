@@ -64,6 +64,7 @@ class DemoConsoleStaticResourceTest {
                 "id=\"comparison-panel\"",
                 "id=\"comparison-summary\"",
                 "id=\"comparison-grid\"",
+                "id=\"degradation-list\"",
                 "id=\"report-action\"",
                 "id=\"download-report\"",
                 "下载中文 Markdown 报告",
@@ -87,6 +88,12 @@ class DemoConsoleStaticResourceTest {
                         "for (const scenario of state.scenarios)",
                         "renderComparisonSummary",
                         "renderComparisonCard",
+                        "renderDegradations",
+                        "DATA_SOURCE_DEGRADED",
+                        "安全降级已覆盖常规场景预期",
+                        "安全覆盖",
+                        "DEGRADED: \"降级完成\"",
+                        "UNKNOWN: \"未知\"",
                         "configureReportDownload",
                         "encodeURIComponent(evaluationId)",
                         "removeAttribute(\"href\")",
@@ -122,10 +129,13 @@ class DemoConsoleStaticResourceTest {
                         ".comparison-summary",
                         ".comparison-card",
                         ".comparison-card--failed",
+                        ".comparison--safety",
                         ".comparison-risk",
                         ".comparison-card__detail",
                         ".report-action",
-                        ".report-download")
+                        ".report-download",
+                        ".degradation-notice",
+                        ".step-item[data-status=\"DEGRADED\"]")
                 .doesNotContain("@import", "url(http://", "url(https://");
     }
 

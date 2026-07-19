@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -23,7 +26,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import com.hrniux.underwriting.demo.DemoScenarioRepository;
 import com.hrniux.underwriting.model.DeterministicMockModelGateway;
 import com.hrniux.underwriting.prompt.PromptTemplateService;
+import com.hrniux.underwriting.rag.DocumentChunk;
+import com.hrniux.underwriting.rag.DocumentType;
 import com.hrniux.underwriting.rag.KnowledgeService;
+import com.hrniux.underwriting.rag.RetrievalHit;
 import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.UnderwritingRuleEngine;
 import com.hrniux.underwriting.session.InMemorySessionRepository;
@@ -34,6 +40,7 @@ import com.hrniux.underwriting.tool.FakeUnderwritingFactTools;
 import com.hrniux.underwriting.tool.ToolCallStatus;
 import com.hrniux.underwriting.tool.ToolName;
 import com.hrniux.underwriting.tool.ToolRegistry;
+import com.hrniux.underwriting.tool.UnderwritingFactTools;
 
 @SpringBootTest
 class UnderwritingAgentOrchestratorTest {
@@ -105,6 +112,66 @@ class UnderwritingAgentOrchestratorTest {
             assertThat(trace.status()).isEqualTo(StepStatus.FAILED);
             assertThat(trace.errorCode()).isEqualTo("POLICY_NOT_FOUND");
         });
+    }
+
+    @Test
+    void degradesANonCriticalDisasterFailureWithoutTreatingUnknownRiskAsLow() {
+        var scenario = DemoScenarioRepository.loadDefault().required("P-2001");
+        UnderwritingFactTools factTools = mock(UnderwritingFactTools.class);
+        when(factTools.getPolicy("P-2001")).thenReturn(scenario.policy());
+        when(factTools.getQuotation("P-2001")).thenReturn(scenario.quotation());
+        when(factTools.getUnderwritingHistory("P-2001")).thenReturn(scenario.history());
+        when(factTools.getSurveyReport("P-2001")).thenReturn(scenario.survey());
+        when(factTools.getDisasterRisk("P-2001")).thenThrow(new IllegalStateException("upstream timeout"));
+
+        KnowledgeService reliableKnowledge = mock(KnowledgeService.class);
+        DocumentChunk chunk = new DocumentChunk(
+                "CHUNK-DEGRADED",
+                "DOC-DEGRADED",
+                0,
+                "办公楼核保指引",
+                DocumentType.RISK_GUIDE,
+                "PROPERTY",
+                "办公楼基础风险较低，但外部灾害数据缺失时必须人工补充核验。",
+                Map.of());
+        when(reliableKnowledge.search(anyString(), anyInt(), isNull(), anyString()))
+                .thenReturn(List.of(new RetrievalHit(chunk, 0.9)));
+        PromptTemplateService prompts = mock(PromptTemplateService.class);
+        when(prompts.preview(anyString(), any(Map.class))).thenReturn("rendered prompt with degradation warning");
+
+        UnderwritingAgentOrchestrator isolated = isolatedOrchestrator(
+                reliableKnowledge,
+                prompts,
+                new ToolRegistry(factTools));
+
+        UnderwritingEvaluation evaluation = isolated.evaluate(
+                new EvaluationRequest(null, "P-2001", "灾害平台超时时是否可以自动承保？"));
+
+        assertThat(evaluation.evidence()).isNotEmpty();
+        assertThat(evaluation.riskLevel()).isEqualTo(com.hrniux.underwriting.rule.RiskLevel.LOW);
+        assertThat(evaluation.riskScore()).isEqualTo(10);
+        assertThat(evaluation.decision()).isEqualTo(Decision.MANUAL_REVIEW);
+        assertThat(evaluation.degradations()).singleElement().satisfies(degradation -> {
+            assertThat(degradation.code()).isEqualTo("NON_CRITICAL_TOOL_UNAVAILABLE");
+            assertThat(degradation.toolName()).isEqualTo(ToolName.GET_DISASTER_RISK);
+            assertThat(degradation.errorCode()).isEqualTo("TOOL_CALL_FAILED");
+            assertThat(degradation.decisionFloor()).isEqualTo(Decision.MANUAL_REVIEW);
+        });
+        assertThat(evaluation.toolTraces())
+                .filteredOn(trace -> trace.toolName() == ToolName.GET_DISASTER_RISK)
+                .singleElement()
+                .satisfies(trace -> assertThat(trace.status()).isEqualTo(ToolCallStatus.FAILED));
+        assertThat(evaluation.stepTraces())
+                .filteredOn(trace -> trace.step() == AgentStep.BUSINESS_DATA_COLLECTION)
+                .singleElement()
+                .satisfies(trace -> {
+                    assertThat(trace.status()).isEqualTo(StepStatus.DEGRADED);
+                    assertThat(trace.errorCode()).isEqualTo("NON_CRITICAL_TOOL_UNAVAILABLE");
+        });
+        assertThat(evaluation.summary()).contains("人工复核");
+        assertThat(evaluation.reasons()).anyMatch(reason -> reason.contains("灾害风险数据暂时不可用"));
+        assertThat(evaluation.recommendedActions()).contains("补充并核验缺失的外部灾害风险数据");
+        verify(reliableKnowledge).search(contains("UNKNOWN"), eq(4), isNull(), eq("PROPERTY"));
     }
 
     private UnderwritingAgentOrchestrator isolatedOrchestrator(

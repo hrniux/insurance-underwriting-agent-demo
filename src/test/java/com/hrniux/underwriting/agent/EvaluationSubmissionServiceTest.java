@@ -29,6 +29,7 @@ import com.hrniux.underwriting.rule.RiskLevel;
 import com.hrniux.underwriting.shared.config.IdempotencyProperties;
 import com.hrniux.underwriting.shared.error.ConflictException;
 import com.hrniux.underwriting.shared.error.InvalidRequestException;
+import com.hrniux.underwriting.tool.ToolName;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
@@ -144,6 +145,22 @@ class EvaluationSubmissionServiceTest {
         assertThat(counter("failed")).isEqualTo(2.0);
     }
 
+    @Test
+    void recordsADegradationMetricOnlyForTheActualAgentExecution() {
+        EvaluationRequest request = request("灾害数据缺失时是否承保？");
+        when(orchestrator.evaluate(request)).thenReturn(degradedEvaluation("EVAL-DEGRADED", request));
+
+        service.submit(request, "interview-request-degraded");
+        service.submit(request, "interview-request-degraded");
+
+        assertThat(metrics.get("underwriting.agent.degradations")
+                .tag("tool", "GET_DISASTER_RISK")
+                .tag("reason", "NON_CRITICAL_TOOL_UNAVAILABLE")
+                .counter()
+                .count()).isEqualTo(1.0);
+        verify(orchestrator).evaluate(request);
+    }
+
     private double counter(String outcome) {
         return metrics.get("underwriting.evaluation.submissions")
                 .tag("outcome", outcome)
@@ -162,6 +179,22 @@ class EvaluationSubmissionServiceTest {
         return new UnderwritingEvaluation(
                 id, "SES-1", request.policyNo(), request.question(), Decision.APPROVE, RiskLevel.LOW, 10,
                 model.summary(), model.reasons(), model.recommendedActions(), List.of(), List.of(), List.of(),
-                List.of(), model, Instant.parse("2026-07-19T06:00:00Z"));
+                List.of(), List.of(), model, Instant.parse("2026-07-19T06:00:00Z"));
+    }
+
+    private UnderwritingEvaluation degradedEvaluation(String id, EvaluationRequest request) {
+        ModelResponse model = new ModelResponse(
+                "建议转人工复核", List.of(), List.of("补充灾害风险数据"),
+                "mock", "test-model", 1, false);
+        DegradationNotice degradation = new DegradationNotice(
+                "NON_CRITICAL_TOOL_UNAVAILABLE",
+                ToolName.GET_DISASTER_RISK,
+                "TOOL_CALL_FAILED",
+                "灾害风险数据暂时不可用。",
+                Decision.MANUAL_REVIEW);
+        return new UnderwritingEvaluation(
+                id, "SES-1", request.policyNo(), request.question(), Decision.MANUAL_REVIEW, RiskLevel.LOW, 10,
+                model.summary(), model.reasons(), model.recommendedActions(), List.of(degradation), List.of(),
+                List.of(), List.of(), List.of(), model, Instant.parse("2026-07-19T06:00:00Z"));
     }
 }

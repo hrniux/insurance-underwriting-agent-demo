@@ -94,6 +94,54 @@ curl -sS "$BASE_URL/actuator/metrics/underwriting.evaluation.decisions" | python
 提交计数和耗时按 `outcome=created|replayed|conflict|failed` 聚合；决策计数只记录真实 Agent
 执行，按 `decision` 和 `risk_level` 聚合，不把重放请求重复计入业务结论。
 
+### 可重复的灾害平台降级演示
+
+先停止普通进程，然后使用专用 Profile 启动：
+
+```bash
+SPRING_PROFILES_ACTIVE=degraded-demo mvn spring-boot:run
+```
+
+提交 `P-2001`：
+
+```bash
+curl -sS -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: degraded-demo-p2001' \
+  -d '{"policyNo":"P-2001","question":"灾害平台不可用时是否可以自动承保？"}' \
+  | python3 -m json.tool
+```
+
+关键响应片段：
+
+```json
+{
+  "decision": "MANUAL_REVIEW",
+  "riskLevel": "LOW",
+  "riskScore": 10,
+  "degradations": [{
+    "code": "NON_CRITICAL_TOOL_UNAVAILABLE",
+    "toolName": "GET_DISASTER_RISK",
+    "errorCode": "TOOL_CALL_FAILED",
+    "decisionFloor": "MANUAL_REVIEW"
+  }],
+  "stepTraces": [
+    {"step": "BUSINESS_DATA_COLLECTION", "status": "DEGRADED",
+     "errorCode": "NON_CRITICAL_TOOL_UNAVAILABLE"}
+  ]
+}
+```
+
+工具轨迹中的 `GET_DISASTER_RISK` 状态为 `FAILED`；后续规则、模型和持久化步骤仍可完成。下载该
+评估的 Markdown 报告会出现“数据质量与安全降级”章节。这个 Profile 只影响 `P-2001`，且仅用于
+教学和面试，不应作为生产故障注入机制。
+
+发生一次降级后可查询对应指标：
+
+```bash
+curl -sS "$BASE_URL/actuator/metrics/underwriting.agent.degradations" | python3 -m json.tool
+```
+
 ### 下载中文 Markdown 报告 `/{evaluationId}/report`
 
 报告接口只读取已经保存的评估，不会再次运行七步 Agent。下面先用虚构保单 `P-1001` 创建评估，再保存报告和响应头：

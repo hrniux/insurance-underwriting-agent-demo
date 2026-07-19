@@ -473,6 +473,10 @@ h4 {
   color: var(--reject);
 }
 
+.comparison--safety {
+  color: var(--review);
+}
+
 .risk-label {
   margin-bottom: 0.35rem;
   color: var(--muted);
@@ -617,6 +621,32 @@ h4 {
   color: var(--teal);
 }
 
+.degradation-section {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.degradation-notice {
+  padding: 1rem;
+  color: #6f4307;
+  background: var(--review-soft);
+  border: 1px solid #e6c47c;
+  border-left: 4px solid var(--review);
+  border-radius: 0.8rem;
+}
+
+.degradation-notice h3,
+.degradation-notice p:last-child {
+  margin-bottom: 0;
+}
+
+.degradation-notice__code,
+.degradation-notice__meta {
+  color: #725117;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
 .card-grid,
 .trace-grid {
   display: grid;
@@ -699,6 +729,10 @@ h4 {
   border-radius: 50%;
   font-size: 0.78rem;
   font-weight: 850;
+}
+
+.step-item[data-status="DEGRADED"] .step-index {
+  background: var(--review);
 }
 
 .step-item strong {

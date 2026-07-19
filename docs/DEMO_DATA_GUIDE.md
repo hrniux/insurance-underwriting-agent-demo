@@ -260,7 +260,16 @@ bash scripts/demo.sh
 
 ### 7.3 灾害等级 `HazardLevel`
 
-等级从低到高依次为：低（`LOW`）、中（`MEDIUM`）、高（`HIGH`）、红色（`RED`）、极端（`EXTREME`）。规则会按照这个顺序判断“达到红色或更高”。
+`UNKNOWN` 表示数据源不可用或无法确认，不等于低风险。已知等级从低到高依次为：低（`LOW`）、中（`MEDIUM`）、高（`HIGH`）、红色（`RED`）、极端（`EXTREME`）。规则会按照已知等级判断“达到红色或更高”；出现 `UNKNOWN` 时由安全降级策略强制转人工补充核验。
+
+### 7.4 安全降级状态
+
+- `ToolCallStatus.FAILED`：灾害工具本次调用实际失败；
+- `StepStatus.DEGRADED`：资料采集虽然不完整，但在人工复核底线下允许继续；
+- `DegradationNotice`：记录告警编码、工具、错误码、处置说明和决策下限。
+
+可运行 `SPRING_PROFILES_ACTIVE=degraded-demo mvn spring-boot:run`，再执行 `P-2001`。正常场景的
+10 分低风险会保留，但原本的自动通过将提升为人工复核，页面和下载报告都会显示降级告警。
 
 ## 8. 如何修改或新增场景
 

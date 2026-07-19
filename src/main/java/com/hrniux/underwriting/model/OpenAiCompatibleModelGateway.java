@@ -4,6 +4,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -49,8 +50,10 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 String content = execute(request);
                 return new ModelResponse(
                         content,
-                        request.ruleEvaluation().hits().stream().map(hit -> hit.reason()).toList(),
-                        List.of("结合确定性规则与证据执行人工核保复核"),
+                        Stream.concat(
+                                request.ruleEvaluation().hits().stream().map(hit -> hit.reason()),
+                                request.warnings().stream()).toList(),
+                        recommendedActions(request),
                         "openai-compatible",
                         model,
                         attempt,
@@ -78,6 +81,13 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             }
         }
         throw unavailable("Model endpoint was unavailable", maxAttempts, null);
+    }
+
+    private List<String> recommendedActions(ModelRequest request) {
+        if (!request.warnings().isEmpty()) {
+            return List.of("补充并核验缺失的外部灾害风险数据", "由人工核保人员确认完整资料后重新评估");
+        }
+        return List.of("结合确定性规则与证据执行人工核保复核");
     }
 
     @SuppressWarnings("unchecked")

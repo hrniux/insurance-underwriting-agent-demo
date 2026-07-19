@@ -26,6 +26,7 @@ public class PromptSeedConfiguration {
                     历史事实：{{historyFacts}}
                     查勘事实：{{surveyFacts}}
                     灾害事实：{{disasterFacts}}
+                    数据质量告警：{{dataQualityWarnings}}
                     规则结果：{{ruleResults}}
                     知识证据：{{knowledgeEvidence}}
                     """.trim(),
@@ -36,6 +37,7 @@ public class PromptSeedConfiguration {
                             "historyFacts",
                             "surveyFacts",
                             "disasterFacts",
+                            "dataQualityWarnings",
                             "ruleResults",
                             "knowledgeEvidence"));
         };

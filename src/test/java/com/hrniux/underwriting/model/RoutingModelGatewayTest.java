@@ -14,7 +14,7 @@ import com.hrniux.underwriting.rule.RuleEvaluation;
 class RoutingModelGatewayTest {
 
     private final ModelRequest request = new ModelRequest("prompt",
-            new RuleEvaluation(Decision.APPROVE, RiskLevel.LOW, 10, List.of()), List.of());
+            new RuleEvaluation(Decision.APPROVE, RiskLevel.LOW, 10, List.of()), List.of(), List.of());
 
     @Test
     void explicitlyFallsBackToTheMockProvider() {

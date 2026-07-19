@@ -1,6 +1,7 @@
 package com.hrniux.underwriting.model;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.RuleResult;
@@ -20,14 +21,24 @@ public class DeterministicMockModelGateway implements ModelGateway {
             case MANUAL_REVIEW -> "建议转人工复核";
             case REJECT -> "建议拒保";
         };
-        String summary = "%s。确定性规则风险分为 %d，风险等级为 %s；本结论仅用于演示辅助决策。"
-                .formatted(decisionText, request.ruleEvaluation().riskScore(), request.ruleEvaluation().riskLevel());
-        List<String> reasons = request.ruleEvaluation().hits().stream().map(RuleResult::reason).toList();
-        List<String> actions = actionsFor(request.ruleEvaluation().decision(), request.evidence().isEmpty());
+        String warningSummary = request.warnings().isEmpty()
+                ? ""
+                : "；存在 %d 条数据质量告警，未知风险不得按低风险处理".formatted(request.warnings().size());
+        String summary = "%s。确定性规则风险分为 %d，风险等级为 %s%s；本结论仅用于演示辅助决策。"
+                .formatted(decisionText, request.ruleEvaluation().riskScore(), request.ruleEvaluation().riskLevel(),
+                        warningSummary);
+        List<String> reasons = Stream.concat(
+                request.ruleEvaluation().hits().stream().map(RuleResult::reason),
+                request.warnings().stream()).toList();
+        List<String> actions = actionsFor(
+                request.ruleEvaluation().decision(), request.evidence().isEmpty(), request.warnings());
         return new ModelResponse(summary, reasons, actions, "mock", model, 1, false);
     }
 
-    private List<String> actionsFor(Decision decision, boolean evidenceMissing) {
+    private List<String> actionsFor(Decision decision, boolean evidenceMissing, List<String> warnings) {
+        if (!warnings.isEmpty()) {
+            return List.of("补充并核验缺失的外部灾害风险数据", "由人工核保人员确认完整资料后重新评估");
+        }
         if (evidenceMissing) {
             return List.of("补充产品条款与核保规则证据", "提交人工核保人员复核");
         }

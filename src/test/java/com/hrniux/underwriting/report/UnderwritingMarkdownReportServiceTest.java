@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.hrniux.underwriting.agent.AgentStep;
+import com.hrniux.underwriting.agent.DegradationNotice;
 import com.hrniux.underwriting.agent.Evidence;
 import com.hrniux.underwriting.agent.StepStatus;
 import com.hrniux.underwriting.agent.StepTrace;
@@ -34,6 +35,10 @@ class UnderwritingMarkdownReportServiceTest {
                 "# 财险智能核保评估报告",
                 "人工复核（`MANUAL_REVIEW`）",
                 "高风险（`HIGH`）",
+                "## 数据质量与安全降级",
+                "`NON_CRITICAL_TOOL_UNAVAILABLE`",
+                "灾害风险工具（`GET_DISASTER_RISK`）",
+                "人工复核（`MANUAL_REVIEW`）",
                 "| `RED_RAINSTORM` | 高风险（`HIGH`） |",
                 "第一行 \\| &lt;script&gt;<br>第二行",
                 "理解核保问题（`QUESTION_UNDERSTANDING`）",
@@ -49,6 +54,7 @@ class UnderwritingMarkdownReportServiceTest {
         assertThat(report).contains(
                 "## 核保原因\n\n- 无",
                 "## 建议动作\n\n- 无",
+                "本次评估未发生数据源降级",
                 "| 无 | 无 | 无 | 无 | 无 |",
                 "| 无 | 无 | 无 | 无 | 无 | 无 |");
     }
@@ -66,6 +72,12 @@ class UnderwritingMarkdownReportServiceTest {
                 "规则要求人工复核。",
                 List.of("暴雨风险较高"),
                 List.of("核实排水整改情况"),
+                List.of(new DegradationNotice(
+                        "NON_CRITICAL_TOOL_UNAVAILABLE",
+                        ToolName.GET_DISASTER_RISK,
+                        "TOOL_CALL_FAILED",
+                        "灾害风险数据暂时不可用，必须转人工补充核验。",
+                        Decision.MANUAL_REVIEW)),
                 List.of(new Evidence(
                         "DOC-001",
                         "CHUNK-001",
@@ -115,6 +127,7 @@ class UnderwritingMarkdownReportServiceTest {
                 RiskLevel.LOW,
                 10,
                 "基础风险较低。",
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of(),

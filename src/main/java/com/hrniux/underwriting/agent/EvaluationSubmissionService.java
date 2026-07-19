@@ -38,6 +38,7 @@ public class EvaluationSubmissionService {
     private static final String SUBMISSION_METRIC = "underwriting.evaluation.submissions";
     private static final String DURATION_METRIC = "underwriting.evaluation.duration";
     private static final String DECISION_METRIC = "underwriting.evaluation.decisions";
+    private static final String DEGRADATION_METRIC = "underwriting.agent.degradations";
 
     private final UnderwritingAgentOrchestrator orchestrator;
     private final IdempotencyProperties properties;
@@ -109,6 +110,11 @@ public class EvaluationSubmissionService {
         metrics.counter(DECISION_METRIC,
                 "decision", evaluation.decision().name(),
                 "risk_level", evaluation.riskLevel().name()).increment();
+        for (DegradationNotice degradation : evaluation.degradations()) {
+            metrics.counter(DEGRADATION_METRIC,
+                    "tool", degradation.toolName().name(),
+                    "reason", degradation.code()).increment();
+        }
         return evaluation;
     }
 

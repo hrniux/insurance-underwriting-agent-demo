@@ -24,7 +24,7 @@
 
 ### 第 4–5 分钟：讲可靠性与生产化
 
-说明 `Idempotency-Key` 如何合并并发重复请求，展示 Actuator 提交/耗时/决策指标，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
+说明 `Idempotency-Key` 如何合并并发重复请求；可切换 `degraded-demo` Profile 展示灾害平台超时后仍保持人工复核底线；展示 Actuator 提交/耗时/决策/降级指标，再给出 Redis、PostgreSQL/PGVector、真实内部 API、企业模型和 OpenTelemetry 的替换路径。
 
 ## 简历职责如何映射到代码
 
@@ -37,6 +37,7 @@
 | 规则校验与可解释决策 | `UnderwritingRuleEngine`、`RuleEvaluation`、步骤/工具 Trace |
 | 可审计中文结果交付 | `UnderwritingMarkdownReportService`、`GET /api/v1/underwriting/evaluations/{evaluationId}/report` |
 | 幂等、并发单飞与运行指标 | `EvaluationSubmissionService`、`Idempotency-Key`、Actuator Metrics |
+| 内部系统故障分级与安全降级 | `ToolCriticality`、`ToolAttempt`、`DegradationNotice`、`degraded-demo` Profile |
 
 ## 常见面试问题
 
@@ -82,11 +83,11 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提
 
 ### Q11：怎么做可观测性？
 
-当前返回每一步和每个工具的状态、耗时、错误码，模型响应含 provider/model/attempts/fallback；同时已用 Micrometer 记录提交结果、API 耗时和决策/风险分布，并通过 Actuator 查询。所有标签都是有限枚举，避免把保单号或幂等键作为标签造成高基数。生产会再接 Prometheus 和 OpenTelemetry，将 traceId 贯穿 API、工具、模型和数据库，并监控 Token 成本、规则命中和 RAG 质量。
+当前返回每一步和每个工具的状态、耗时、错误码，模型响应含 provider/model/attempts/fallback；同时已用 Micrometer 记录提交结果、API 耗时、决策/风险分布和安全降级，并通过 Actuator 查询。所有标签都是有限枚举，避免把保单号或幂等键作为标签造成高基数。生产会再接 Prometheus 和 OpenTelemetry，将 traceId 贯穿 API、工具、模型和数据库，并监控 Token 成本、规则命中和 RAG 质量。
 
 ### Q12：真实内部系统不稳定怎么办？
 
-每个适配器设置独立超时、舱壁、熔断和限流；区分关键/非关键资料；调用加幂等和缓存；长任务异步化并保留状态机。关键资料缺失不能自动承保，要失败或提升到人工复核。
+项目已经把工具显式分为 `CRITICAL` 和 `DEGRADABLE`。保单、报价、历史、查勘和规则属于关键链路，失败立即终止；灾害外部数据失败时，`ToolAttempt` 保留失败轨迹，编排器用 `UNKNOWN` 而不是 `LOW` 占位，把资料采集步骤标记为 `DEGRADED`，写入结构化 `DegradationNotice`，并把决策下限提升到人工复核。`degraded-demo` Profile 可以现场复现。生产还要为适配器设置独立超时、舱壁、熔断和限流，并严格区分可降级的上游故障与不可吞掉的程序错误。
 
 ### Q13：如何评价 Agent 是否有效？
 

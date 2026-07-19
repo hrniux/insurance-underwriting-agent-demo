@@ -34,10 +34,12 @@ const LABELS = {
   },
   statuses: {
     SUCCESS: "成功",
+    DEGRADED: "降级完成",
     FAILED: "失败",
     SKIPPED: "跳过"
   },
   hazards: {
+    UNKNOWN: "未知",
     LOW: "低",
     MEDIUM: "中",
     HIGH: "高",
@@ -252,11 +254,18 @@ function renderDecisionSummary(evaluation, expected) {
   heading.append(badge, risk);
 
   const matches = evaluation.decision === expected?.decision;
+  const safetyOverride = !matches && Array.isArray(evaluation.degradations) && evaluation.degradations.length > 0;
   const comparison = el(
     "p",
-    matches ? "comparison comparison--match" : "comparison comparison--different",
+    matches
+      ? "comparison comparison--match"
+      : safetyOverride
+        ? "comparison comparison--safety"
+        : "comparison comparison--different",
     matches
       ? "实际结论与场景预期一致"
+      : safetyOverride
+        ? `安全降级已覆盖常规场景预期（常规预期：${text(expected?.decisionLabel, label("decisions", expected?.decision))}）`
       : `实际结论与预期不同（预期：${text(expected?.decisionLabel, label("decisions", expected?.decision))}）`
   );
 
@@ -287,6 +296,31 @@ function renderTextList(targetId, title, items = []) {
   list.append(...values.map(item => el("li", null, item)));
   section.append(el("h3", null, title), list);
   setChildren(find(`#${targetId}`), [section]);
+}
+
+function renderDegradations(items) {
+  const target = find("#degradation-list");
+  if (!items.length) {
+    target.replaceChildren();
+    return;
+  }
+  const section = el("section", "result-section degradation-section");
+  const notices = items.map(item => {
+    const notice = el("article", "degradation-notice");
+    notice.append(
+      el("p", "degradation-notice__code", text(item.code, "DATA_SOURCE_DEGRADED")),
+      el("h3", null, `${label("tools", item.toolName)}已安全降级`),
+      el("p", null, item.message),
+      el(
+        "p",
+        "degradation-notice__meta",
+        `工具错误码：${text(item.errorCode)} · 决策下限：${label("decisions", item.decisionFloor)}`
+      )
+    );
+    return notice;
+  });
+  section.append(el("h3", null, "数据质量与安全降级"), ...notices);
+  setChildren(target, [section]);
 }
 
 function renderRuleHits(items) {
@@ -335,6 +369,7 @@ function renderStepTraces(items) {
   const list = el("ol", "step-timeline");
   const entries = items.map((item, index) => {
     const entry = el("li", "step-item");
+    entry.dataset.status = text(item.status, "UNKNOWN");
     const content = [
       el("span", "step-index", index + 1),
       el("strong", null, label("steps", item.step)),
@@ -380,6 +415,7 @@ function configureReportDownload(evaluationId) {
 
 function renderEvaluation(evaluation, expected) {
   renderDecisionSummary(evaluation, expected);
+  renderDegradations(Array.isArray(evaluation.degradations) ? evaluation.degradations : []);
   renderTextList("reason-list", "核保原因", evaluation.reasons);
   renderTextList("action-list", "建议动作", evaluation.recommendedActions);
   renderRuleHits(Array.isArray(evaluation.ruleHits) ? evaluation.ruleHits : []);
@@ -415,6 +451,11 @@ function renderComparisonSummary(items) {
   const matches = successful.filter(item =>
     item.evaluation.decision === item.scenario.expectedResult?.decision
   ).length;
+  const safetyOverrides = successful.filter(item =>
+    item.evaluation.decision !== item.scenario.expectedResult?.decision
+      && Array.isArray(item.evaluation.degradations)
+      && item.evaluation.degradations.length > 0
+  ).length;
   const ruleCount = successful.reduce((total, item) => total + (item.evaluation.ruleHits?.length || 0), 0);
   const evidenceCount = successful.reduce((total, item) => total + (item.evaluation.evidence?.length || 0), 0);
   const scoreRange = scores.length ? `${Math.min(...scores)}–${Math.max(...scores)} 分` : "暂无";
@@ -425,6 +466,7 @@ function renderComparisonSummary(items) {
       `通过 ${distribution.APPROVE || 0} · 复核 ${distribution.MANUAL_REVIEW || 0} · 拒保 ${distribution.REJECT || 0}`
     ],
     ["符合预期", `${matches}/${successful.length}`],
+    ["安全覆盖", `${safetyOverrides} 个`],
     ["风险分范围", scoreRange],
     ["规则命中", `${ruleCount} 条`],
     ["知识证据", `${evidenceCount} 条`]
@@ -455,6 +497,9 @@ function renderComparisonCard(item) {
   const badge = el("p", "decision-badge", label("decisions", evaluation.decision));
   badge.dataset.decision = text(evaluation.decision, "UNKNOWN");
   const matches = evaluation.decision === item.scenario.expectedResult?.decision;
+  const safetyOverride = !matches
+    && Array.isArray(evaluation.degradations)
+    && evaluation.degradations.length > 0;
   const progress = el("div", "comparison-risk");
   progress.setAttribute("role", "progressbar");
   progress.setAttribute("aria-label", `${item.scenario.name}风险分`);
@@ -484,9 +529,15 @@ function renderComparisonCard(item) {
     badge,
     el(
       "p",
-      matches ? "comparison comparison--match" : "comparison comparison--different",
+      matches
+        ? "comparison comparison--match"
+        : safetyOverride
+          ? "comparison comparison--safety"
+          : "comparison comparison--different",
       matches
         ? "实际结论与预期一致"
+        : safetyOverride
+          ? `安全降级已覆盖常规预期：${label("decisions", item.scenario.expectedResult?.decision)}`
         : `实际结论与预期不同：${label("decisions", item.scenario.expectedResult?.decision)}`
     ),
     progress,
@@ -547,6 +598,7 @@ function resetEvaluation() {
   reportLink.removeAttribute("download");
   [
     "#decision-summary",
+    "#degradation-list",
     "#reason-list",
     "#action-list",
     "#rule-hit-list",

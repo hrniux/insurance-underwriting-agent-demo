@@ -2,12 +2,14 @@ package com.hrniux.underwriting.agent;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +33,9 @@ import com.hrniux.underwriting.tool.DisasterRiskFacts;
 import com.hrniux.underwriting.tool.PolicyFacts;
 import com.hrniux.underwriting.tool.QuotationFacts;
 import com.hrniux.underwriting.tool.SurveyReportFacts;
+import com.hrniux.underwriting.tool.ToolAttempt;
 import com.hrniux.underwriting.tool.ToolCallTrace;
+import com.hrniux.underwriting.tool.ToolCriticality;
 import com.hrniux.underwriting.tool.ToolInvocation;
 import com.hrniux.underwriting.tool.ToolName;
 import com.hrniux.underwriting.tool.ToolRegistry;
@@ -99,8 +103,12 @@ public class UnderwritingAgentOrchestrator {
             return id;
         });
 
-        FactBundle facts = runStep(AgentStep.BUSINESS_DATA_COLLECTION,
-                () -> loadFacts(request.policyNo(), toolTraces));
+        FactBundle facts = runStep(
+                AgentStep.BUSINESS_DATA_COLLECTION,
+                () -> loadFacts(request.policyNo(), toolTraces),
+                result -> result.degradations().isEmpty()
+                        ? StepCompletion.success()
+                        : StepCompletion.degraded(result.degradations().getFirst().code()));
 
         List<Evidence> evidence = runStep(AgentStep.KNOWLEDGE_RETRIEVAL, () -> retrieveEvidence(request, facts));
 
@@ -112,13 +120,14 @@ public class UnderwritingAgentOrchestrator {
             ToolInvocation<RuleEvaluation> invocation = tools.invokeRuleValidation(
                     request.policyNo(), () -> rules.evaluate(context));
             toolTraces.add(invocation.trace());
-            return applyEvidenceFloor(invocation.result(), evidence);
+            return applySafetyFloors(invocation.result(), evidence, facts.degradations());
         });
 
         ModelResponse modelResponse = runStep(AgentStep.RECOMMENDATION_GENERATION, () -> {
             String rendered = prompts.preview(PROMPT_CODE, promptVariables(request, facts, ruleEvaluation, evidence));
             return models.generate(new ModelRequest(rendered, ruleEvaluation,
-                    evidence.stream().map(Evidence::excerpt).toList()));
+                    evidence.stream().map(Evidence::excerpt).toList(),
+                    facts.degradations().stream().map(DegradationNotice::message).toList()));
         });
 
         Instant createdAt = clock.instant();
@@ -126,7 +135,8 @@ public class UnderwritingAgentOrchestrator {
                 idSupplier.get(), sessionId, request.policyNo(), request.question(),
                 ruleEvaluation.decision(), ruleEvaluation.riskLevel(), ruleEvaluation.riskScore(),
                 modelResponse.summary(), modelResponse.reasons(), modelResponse.recommendedActions(),
-                evidence, ruleEvaluation.hits(), toolTraces, lastStepTraces(), modelResponse, createdAt);
+                facts.degradations(), evidence, ruleEvaluation.hits(), toolTraces, lastStepTraces(), modelResponse,
+                createdAt);
 
         UnderwritingEvaluation saved = runStep(AgentStep.RESULT_PERSISTENCE, () -> {
             sessions.appendMessage(sessionId, SessionRole.ASSISTANT, modelResponse.summary());
@@ -158,14 +168,33 @@ public class UnderwritingAgentOrchestrator {
         traces.add(history.trace());
         ToolInvocation<?> survey = tools.invoke(ToolName.GET_SURVEY_REPORT, policyNo);
         traces.add(survey.trace());
-        ToolInvocation<?> disaster = tools.invoke(ToolName.GET_DISASTER_RISK, policyNo);
-        traces.add(disaster.trace());
+        ToolAttempt<?> disasterAttempt = tools.tryInvoke(ToolName.GET_DISASTER_RISK, policyNo);
+        traces.add(disasterAttempt.trace());
+        DisasterRiskFacts disaster;
+        List<DegradationNotice> degradations;
+        if (disasterAttempt.succeeded()) {
+            disaster = (DisasterRiskFacts) disasterAttempt.result();
+            degradations = List.of();
+        }
+        else {
+            if (ToolName.GET_DISASTER_RISK.criticality() != ToolCriticality.DEGRADABLE) {
+                throw disasterAttempt.failure();
+            }
+            disaster = DisasterRiskFacts.unavailable(policyNo, LocalDate.now(clock));
+            degradations = List.of(new DegradationNotice(
+                    "NON_CRITICAL_TOOL_UNAVAILABLE",
+                    ToolName.GET_DISASTER_RISK,
+                    disasterAttempt.trace().errorCode(),
+                    "灾害风险数据暂时不可用，系统未将未知风险解释为低风险，必须转人工补充核验。",
+                    Decision.MANUAL_REVIEW));
+        }
         return new FactBundle(
                 (PolicyFacts) policy.result(),
                 (QuotationFacts) quotation.result(),
                 (UnderwritingHistoryFacts) history.result(),
                 (SurveyReportFacts) survey.result(),
-                (DisasterRiskFacts) disaster.result());
+                disaster,
+                degradations);
     }
 
     private List<Evidence> retrieveEvidence(EvaluationRequest request, FactBundle facts) {
@@ -183,10 +212,17 @@ public class UnderwritingAgentOrchestrator {
                 excerpt, hit.score());
     }
 
-    private RuleEvaluation applyEvidenceFloor(RuleEvaluation rulesResult, List<Evidence> evidence) {
-        Decision decision = evidence.isEmpty()
-                ? Decision.strongest(rulesResult.decision(), Decision.MANUAL_REVIEW)
-                : rulesResult.decision();
+    private RuleEvaluation applySafetyFloors(
+            RuleEvaluation rulesResult,
+            List<Evidence> evidence,
+            List<DegradationNotice> degradations) {
+        Decision decision = rulesResult.decision();
+        if (evidence.isEmpty()) {
+            decision = Decision.strongest(decision, Decision.MANUAL_REVIEW);
+        }
+        for (DegradationNotice degradation : degradations) {
+            decision = Decision.strongest(decision, degradation.decisionFloor());
+        }
         return new RuleEvaluation(decision, rulesResult.riskLevel(), rulesResult.riskScore(), rulesResult.hits());
     }
 
@@ -204,16 +240,25 @@ public class UnderwritingAgentOrchestrator {
         values.put("disasterFacts", facts.disaster());
         values.put("ruleResults", ruleEvaluation);
         values.put("knowledgeEvidence", evidence.isEmpty() ? "未检索到可靠证据" : evidence);
+        values.put("dataQualityWarnings", facts.degradations().isEmpty() ? "无" : facts.degradations());
         return values;
     }
 
     private <T> T runStep(AgentStep step, Supplier<T> action) {
+        return runStep(step, action, ignored -> StepCompletion.success());
+    }
+
+    private <T> T runStep(
+            AgentStep step,
+            Supplier<T> action,
+            Function<T, StepCompletion> completionResolver) {
         Instant startedAt = clock.instant();
         long startedNanos = System.nanoTime();
         try {
             T result = action.get();
-            currentTraces.get().add(new StepTrace(step, StepStatus.SUCCESS, startedAt,
-                    elapsedMillis(startedNanos), null));
+            StepCompletion completion = completionResolver.apply(result);
+            currentTraces.get().add(new StepTrace(step, completion.status(), startedAt,
+                    elapsedMillis(startedNanos), completion.errorCode()));
             return result;
         }
         catch (RuntimeException error) {
@@ -242,6 +287,22 @@ public class UnderwritingAgentOrchestrator {
             QuotationFacts quotation,
             UnderwritingHistoryFacts history,
             SurveyReportFacts survey,
-            DisasterRiskFacts disaster) {
+            DisasterRiskFacts disaster,
+            List<DegradationNotice> degradations) {
+
+        private FactBundle {
+            degradations = List.copyOf(degradations);
+        }
+    }
+
+    private record StepCompletion(StepStatus status, String errorCode) {
+
+        private static StepCompletion success() {
+            return new StepCompletion(StepStatus.SUCCESS, null);
+        }
+
+        private static StepCompletion degraded(String errorCode) {
+            return new StepCompletion(StepStatus.DEGRADED, errorCode);
+        }
     }
 }

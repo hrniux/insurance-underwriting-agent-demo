@@ -55,7 +55,7 @@ flowchart LR
 | 顺序 | 步骤 | 主要动作 | 失败策略 |
 |---|---|---|---|
 | 1 | `QUESTION_UNDERSTANDING` | 创建/恢复会话，写入用户问题 | 会话不存在则终止 |
-| 2 | `BUSINESS_DATA_COLLECTION` | 调用保单、报价、历史、查勘、灾害五个工具 | 关键资料失败则终止，并记录失败轨迹 |
+| 2 | `BUSINESS_DATA_COLLECTION` | 调用保单、报价、历史、查勘、灾害五个工具 | 关键资料失败则终止；灾害数据源失败可安全降级并标记 `DEGRADED` |
 | 3 | `KNOWLEDGE_RETRIEVAL` | 问题 + 标的用途 + 灾害等级组合检索 | 空证据不终止，但提高决策下限 |
 | 4 | `RISK_ANALYSIS` | 汇总强类型 `UnderwritingContext` | 类型/数据不完整则终止 |
 | 5 | `RULE_VALIDATION` | 执行五条确定性规则 | 规则结论成为模型不可降低的下限 |
@@ -105,6 +105,24 @@ REST 的 `/api/v1/tools` 和 MCP 的六个 `@McpTool` 都委托给 `ToolRegistry
 
 MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/mcp`。六个工具都有强类型参数与输出 Schema，适合作为另一个 Agent 或大模型客户端的工具服务器。
 
+### 8.1 分级工具失败与安全降级
+
+`ToolName` 通过 `ToolCriticality` 显式声明 `CRITICAL` 或 `DEGRADABLE`。`ToolRegistry` 提供两种语义但复用同一套计时、
+错误码和脱敏轨迹：
+
+- `invoke` 是严格调用，失败时原样传播异常，适用于保单、报价、历史、查勘和规则校验；
+- `tryInvoke` 返回 `ToolAttempt`，同时携带结果或失败以及对应轨迹，供编排器执行明确的降级策略；
+- 全局调试轨迹使用有界队列，仅保留最近 1,000 条，避免长期运行无限增长。
+
+灾害平台是当前唯一 `DEGRADABLE` 工具。失败后系统构造 `HazardLevel.UNKNOWN` 占位，不会用
+`LOW` 冒充未知；业务资料采集步骤标记为 `DEGRADED`，结果写入 `DegradationNotice`，决策下限
+提升到 `MANUAL_REVIEW`。原始规则分和风险等级继续保留，因此调用方能区分“基础风险低”和
+“资料不完整所以不能自动承保”。关键工具仍失败即终止，不允许普遍吞错。
+
+`degraded-demo` Profile 只为 `P-2001` 注入灾害平台超时，用于可重复演示和集成测试；默认 Profile
+不包含故障注入。生产适配器还应把超时、限流、无数据、权限失败和程序缺陷分类，只有允许的故障
+类型才能进入降级路径。
+
 ## 9. 幂等、并发与指标
 
 `POST /api/v1/underwriting/evaluations` 可选接收 `Idempotency-Key`。提交服务对规范化后的
@@ -119,13 +137,14 @@ MCP 使用 Spring AI WebMVC Server 的 Streamable HTTP 传输，默认地址 `/m
 这是单实例 Demo 实现。缓存通过最大条数和完成后保留期限制内存，默认 1,000 条、24 小时。
 多实例生产环境应把同一状态机迁移到 Redis 或带唯一约束的数据库，并保存最终响应或评估编号。
 
-提交服务同时写入三组低基数 Micrometer 指标：
+提交服务同时写入四组低基数 Micrometer 指标：
 
 | 指标 | 标签 | 含义 |
 |---|---|---|
 | `underwriting.evaluation.submissions` | `outcome` | `created`、`replayed`、`conflict`、`failed` 提交数 |
 | `underwriting.evaluation.duration` | `outcome` | 包含并发等待时间的 API 提交耗时 |
 | `underwriting.evaluation.decisions` | `decision`、`risk_level` | 实际执行生成的结论分布，不重复统计重放请求 |
+| `underwriting.agent.degradations` | `tool`、`reason` | 实际执行发生的安全降级；重放请求不重复统计 |
 
 `/actuator/metrics/{metricName}` 可直接检查本机指标。生产环境再接 Prometheus Registry 和告警系统。
 

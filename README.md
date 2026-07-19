@@ -20,13 +20,14 @@
 - 幂等与并发保护：可选 `Idempotency-Key` 把并发重复提交折叠为一次 Agent 执行，同键异参明确返回冲突。
 - RAG：Markdown/Text 解析、段落切分、重叠窗口、向量化、入库、余弦相似度检索和元数据过滤。
 - 业务工具：保单、报价、历史核保、查勘报告、灾害风险和规则校验六类工具，共用统一注册表与审计轨迹。
+- 分级故障策略：关键业务资料失败立即终止；灾害外部数据源可安全降级为未知，但强制提升到人工复核并保留结构化告警。
 - 规则底线：模型只能解释规则结果，不能把 `MANUAL_REVIEW` 或 `REJECT` 降级为自动通过。
 - 模型切换：默认 Mock；也可切到 OpenAI 兼容接口或企业私有化兼容网关，支持连接/读取超时、有限重试和显式降级。
 - 提示词治理：版本化、激活版本、变量声明检查和预览渲染。
 - REST + MCP：REST 用于管理和调试，MCP 用于 Agent 工具发现与调用，两者复用同一业务实现。
 - 中文交互演示：无需复制命令即可选择四组虚构场景，运行真实核保并阅读规则、证据和七步轨迹。
 - 中文核保报告：把已保存的单次评估导出为 Markdown，完整保留结论、规则、证据、七步轨迹、工具记录和模型元数据。
-- 运行指标：Actuator 暴露提交结果、执行耗时和决策分布三组低基数 Micrometer 指标。
+- 运行指标：Actuator 暴露提交结果、执行耗时、决策分布和安全降级四组低基数 Micrometer 指标。
 
 ## 快速启动
 
@@ -61,6 +62,31 @@ curl --fail http://localhost:8080/actuator/metrics/underwriting.evaluation.decis
 
 幂等记录默认在单实例内保留 24 小时，最多 1,000 条；可通过 `IDEMPOTENCY_RETENTION` 和
 `IDEMPOTENCY_MAX_ENTRIES` 调整。失败执行不会占用键，因此调用方可以使用原键重试。
+
+### 安全降级演示
+
+默认启动不会注入故障。需要面试演示内部灾害平台超时时，启用专用 `degraded-demo` Profile：
+
+```bash
+SPRING_PROFILES_ACTIVE=degraded-demo mvn spring-boot:run
+```
+
+然后在 `/demo/` 运行 `P-2001`，或执行：
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/underwriting/evaluations \
+  -H 'Content-Type: application/json' \
+  -d '{"policyNo":"P-2001","question":"灾害平台不可用时是否可以自动承保？"}' \
+  | python3 -m json.tool
+
+curl --fail http://localhost:8080/actuator/metrics/underwriting.agent.degradations
+```
+
+该 Profile 只模拟 `P-2001` 的灾害工具超时。返回仍保留基础风险 `LOW/10`，但灾害等级使用
+`UNKNOWN`，最终决策提升为 `MANUAL_REVIEW`；`degradations` 会返回结构化告警码
+`NON_CRITICAL_TOOL_UNAVAILABLE`，失败工具轨迹、`DEGRADED` 步骤、Markdown 报告和
+Micrometer 指标也会记录原因。正常 Profile 下四个场景结果完全不变。
+演示台会把这类结果标成“安全降级已覆盖常规场景预期”，而不是普通的结果不一致。
 
 浏览器访问：
 
@@ -118,7 +144,7 @@ QUESTION_UNDERSTANDING
   -> RESULT_PERSISTENCE
 ```
 
-一次完整评估会返回：最终决策、风险等级/分数、命中规则、知识证据、模型摘要、建议动作、5 次业务资料工具调用 + 1 次规则工具调用，以及 7 条步骤轨迹。
+一次完整评估会返回：最终决策、风险等级/分数、命中规则、知识证据、模型摘要、建议动作、结构化降级告警、5 次业务资料工具调用 + 1 次规则工具调用，以及 7 条步骤轨迹。正常流程步骤为 `SUCCESS`；允许继续但资料不完整时明确标记 `DEGRADED`，不会伪装成成功或低风险。
 
 ## 模型切换
 
@@ -181,7 +207,7 @@ src/main/java/com/hrniux/underwriting
 | 内存会话/评估仓库 | Redis 会话 + PostgreSQL 审计与评估表 |
 | Hash Embedding | 企业 Embedding 模型或合规云模型 |
 | 内存向量库 | PostgreSQL + PGVector、Milvus 或 Elasticsearch |
-| JSON 场景仓库 + 虚构工具 | 保单、报价、核保、查勘、灾害平台和规则引擎的真实 API 适配器 |
+| JSON 场景仓库 + 分级失败工具 | 带超时/熔断/舱壁和明确异常分类的内部 REST/gRPC/MQ 适配器 |
 | 单机同步编排 + 单实例幂等单飞 | 状态机/工作流引擎、消息队列、Redis/数据库幂等记录、超时补偿 |
 | 环境变量密钥 | Vault/KMS、短期凭证、密钥轮转和出口网关 |
 | Micrometer 单实例指标 | Prometheus Registry、OpenTelemetry Trace、模型成本与召回质量看板 |

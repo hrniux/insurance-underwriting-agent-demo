@@ -190,6 +190,28 @@ class DocumentationContractTest {
                 "Idempotency-Key: demo-evaluation-${policy_no}");
     }
 
+    @Test
+    void documentsAndExposesTheSafeDegradationDemo() throws IOException {
+        assertThat(read("README.md")).contains(
+                "degraded-demo",
+                "NON_CRITICAL_TOOL_UNAVAILABLE",
+                "underwriting.agent.degradations");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "ToolCriticality",
+                "ToolAttempt",
+                "HazardLevel.UNKNOWN",
+                "DegradationNotice");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "BUSINESS_DATA_COLLECTION",
+                "DEGRADED");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "CRITICAL",
+                "DEGRADABLE");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "UNKNOWN",
+                "安全降级状态");
+    }
+
     private String read(String path) throws IOException {
         return Files.readString(ROOT.resolve(path));
     }

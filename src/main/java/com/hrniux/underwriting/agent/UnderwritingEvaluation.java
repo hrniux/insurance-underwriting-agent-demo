@@ -21,6 +21,7 @@ public record UnderwritingEvaluation(
         String summary,
         List<String> reasons,
         List<String> recommendedActions,
+        List<DegradationNotice> degradations,
         List<Evidence> evidence,
         List<RuleResult> ruleHits,
         List<ToolCallTrace> toolTraces,
@@ -38,6 +39,7 @@ public record UnderwritingEvaluation(
         Objects.requireNonNull(summary, "summary must not be null");
         reasons = List.copyOf(reasons);
         recommendedActions = List.copyOf(recommendedActions);
+        degradations = List.copyOf(degradations);
         evidence = List.copyOf(evidence);
         ruleHits = List.copyOf(ruleHits);
         toolTraces = List.copyOf(toolTraces);
@@ -48,6 +50,7 @@ public record UnderwritingEvaluation(
 
     public UnderwritingEvaluation withStepTraces(List<StepTrace> traces) {
         return new UnderwritingEvaluation(id, sessionId, policyNo, question, decision, riskLevel, riskScore, summary,
-                reasons, recommendedActions, evidence, ruleHits, toolTraces, traces, modelResponse, createdAt);
+                reasons, recommendedActions, degradations, evidence, ruleHits, toolTraces, traces, modelResponse,
+                createdAt);
     }
 }
