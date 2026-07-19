@@ -69,6 +69,7 @@ class DocumentationContractTest {
                 "/api/v1/underwriting/reviews",
                 "/api/v1/knowledge/documents",
                 "/api/v1/knowledge/search",
+                "/api/v1/knowledge/evaluations",
                 "/api/v1/prompts",
                 "/api/v1/tools",
                 "/api/v1/demo/scenarios",
@@ -117,7 +118,7 @@ class DocumentationContractTest {
         assertThat(read("scripts/demo.sh")).contains(
                 "服务健康检查",
                 "演示场景目录",
-                "RAG 知识检索",
+                "RAG 混合知识检索与分数解释",
                 "共享业务工具",
                 "人工复核反馈闭环",
                 "${title}（${policy_no}）",
@@ -241,7 +242,7 @@ class DocumentationContractTest {
                 "AgentReviewRelationship",
                 "为什么人工复核不能再次覆盖");
         assertThat(read("scripts/demo.sh")).contains(
-                "[6/9] 人工复核反馈闭环",
+                "[7/10] 人工复核反馈闭环",
                 "underwriting.human.reviews");
     }
 
@@ -294,6 +295,33 @@ class DocumentationContractTest {
         assertThat(read(".env.example")).contains(
                 "TASK_CORE_POOL_SIZE",
                 "TASK_MAX_ENTRIES");
+    }
+
+    @Test
+    void documentsExplainableHybridRetrievalAndItsQualityGate() throws IOException {
+        assertThat(read("README.md")).contains(
+                "65% vector + 35% lexical",
+                "Recall@K",
+                "MRR",
+                "/api/v1/knowledge/evaluations");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "BM25",
+                "RetrievalMode",
+                "不能跨查询解释成概率或置信度",
+                "RetrievalEvaluationService");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "vectorScore",
+                "lexicalScore",
+                "matchedTerms",
+                "minimumMeanReciprocalRank");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "### Q18",
+                "版本化、脱敏、有代表性的标注集",
+                "一次 Demo 的 `passed=true`");
+        assertThat(read("scripts/demo.sh")).contains(
+                "[4/10] RAG 黄金问题集离线评测",
+                "/api/v1/knowledge/evaluations",
+                "RAG 质量门禁未通过");
     }
 
     private String read(String path) throws IOException {

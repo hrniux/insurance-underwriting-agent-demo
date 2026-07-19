@@ -53,7 +53,57 @@ class ManagementApiIntegrationTest {
                         .content("{\"query\":\"暴雨人工复核\",\"topK\":4,\"productCode\":\"PROPERTY\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$[0].chunk.content").isNotEmpty());
+                .andExpect(jsonPath("$[0].chunk.content").isNotEmpty())
+                .andExpect(jsonPath("$[0].score").isNumber())
+                .andExpect(jsonPath("$[0].vectorScore").isNumber())
+                .andExpect(jsonPath("$[0].lexicalScore").isNumber())
+                .andExpect(jsonPath("$[0].mode").isNotEmpty())
+                .andExpect(jsonPath("$[0].matchedTerms").isArray());
+    }
+
+    @Test
+    void evaluatesGoldenRetrievalCasesAgainstQualityThresholds() throws Exception {
+        mvc.perform(post("/api/v1/knowledge/evaluations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "topK": 4,
+                                  "minimumRecallAtK": 1.0,
+                                  "minimumMeanReciprocalRank": 1.0,
+                                  "cases": [
+                                    {
+                                      "name": "产品条款编号",
+                                      "query": "CLAUSE-PROPERTY-001 产品条款",
+                                      "expectedDocumentIds": ["CLAUSE-PROPERTY-001"],
+                                      "documentType": "PRODUCT_CLAUSE",
+                                      "productCode": "PROPERTY"
+                                    },
+                                    {
+                                      "name": "暴雨核保规则",
+                                      "query": "RULE-RAIN-001 暴雨洪水核保规则",
+                                      "expectedDocumentIds": ["RULE-RAIN-001"],
+                                      "documentType": "UNDERWRITING_RULE",
+                                      "productCode": "PROPERTY"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.caseCount").value(2))
+                .andExpect(jsonPath("$.recallAtK").value(1.0))
+                .andExpect(jsonPath("$.meanReciprocalRank").value(1.0))
+                .andExpect(jsonPath("$.passed").value(true))
+                .andExpect(jsonPath("$.cases[0].firstRelevantRank").value(1))
+                .andExpect(jsonPath("$.cases[1].retrievedDocumentIds[0]").value("RULE-RAIN-001"));
+    }
+
+    @Test
+    void rejectsAnEmptyGoldenEvaluationSet() throws Exception {
+        mvc.perform(post("/api/v1/knowledge/evaluations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"topK\":4,\"cases\":[]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"));
     }
 
     @Test

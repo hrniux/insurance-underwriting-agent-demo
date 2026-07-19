@@ -42,6 +42,37 @@ class InMemoryVectorStoreTest {
         });
     }
 
+    @Test
+    void exactTermsRecoverAClauseWhenTheEmbeddingHasNoSignal() {
+        InMemoryVectorStore lexicalStore = new InMemoryVectorStore(ignored -> new double[8]);
+        lexicalStore.add(chunk("RAIN-900-0", "CLAUSE-RAIN-900", DocumentType.PRODUCT_CLAUSE,
+                "PROPERTY", "仓库累计免赔额按照附加条款执行"));
+
+        var hits = lexicalStore.search("请定位 CLAUSE-RAIN-900", 4, null, "property");
+
+        assertThat(hits).singleElement().satisfies(hit -> {
+            assertThat(hit.chunk().documentId()).isEqualTo("CLAUSE-RAIN-900");
+            assertThat(hit.mode()).isEqualTo(RetrievalMode.LEXICAL_ONLY);
+            assertThat(hit.vectorScore()).isZero();
+            assertThat(hit.lexicalScore()).isEqualTo(1.0);
+            assertThat(hit.matchedTerms()).contains("clause", "rain", "900");
+        });
+    }
+
+    @Test
+    void exposesAStableHybridScoreBreakdown() {
+        var hits = store.search("暴雨红色预警仓库排水", 2, null, "PROPERTY");
+
+        assertThat(hits).isNotEmpty();
+        assertThat(hits.getFirst()).satisfies(hit -> {
+            assertThat(hit.mode()).isEqualTo(RetrievalMode.HYBRID);
+            assertThat(hit.score()).isBetween(0.0, 1.0);
+            assertThat(hit.vectorScore()).isPositive();
+            assertThat(hit.lexicalScore()).isPositive();
+            assertThat(hit.matchedTerms()).contains("暴雨", "红色", "预警", "排水");
+        });
+    }
+
     private DocumentChunk chunk(
             String id, String documentId, DocumentType type, String productCode, String content) {
         return new DocumentChunk(id, documentId, 0, "测试标题", type, productCode, content, Map.of());

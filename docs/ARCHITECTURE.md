@@ -35,6 +35,11 @@ flowchart LR
     Agent --> RAG["KnowledgeService"]
     RAG --> Split["Parser + Splitter"]
     RAG --> Vector["Hash Embedding + VectorStore"]
+    RAG --> Lexical["中文/标识符词法分析 + BM25"]
+    Vector --> Fusion["65/35 融合排序 + 分数解释"]
+    Lexical --> Fusion
+    EvalAPI["黄金问题集 /knowledge/evaluations"] --> RAGEval["Recall@K + MRR + 质量阈值"]
+    RAGEval --> RAG
     Agent --> Rules["UnderwritingRuleEngine"]
     Agent --> Prompt["PromptTemplateService"]
     Agent --> Router["RoutingModelGateway"]
@@ -90,10 +95,20 @@ Markdown/Text
   -> 固定最大窗口 + 重叠
   -> Hash Embedding（固定维度、L2 归一化）
   -> 内存向量库
-  -> 余弦相似度 Top-K + 文档类型/险种过滤
+  -> 中文单字/双字 + 英文数字标识符词法分析
+  -> 余弦相似度 + BM25（65/35）融合 Top-K
+  -> 文档类型/险种过滤 + 分数组成/命中词解释
 ```
 
-Hash Embedding 的优点是无需模型、完全确定、测试稳定；缺点是语义能力有限。生产环境保持 `EmbeddingService` 与 `VectorStore` 端口不变，替换为企业 Embedding + PGVector/Milvus 即可。
+Hash Embedding 的优点是无需模型、完全确定、测试稳定；缺点是语义能力有限。词法分支对条款编号、规则代码和
+风险专有名词提供精确召回，BM25 在完成文档类型/险种过滤后的候选集上计算，并在单次查询内归一化；向量分数与
+词法分数分别保留，`RetrievalMode` 标记 `HYBRID`、`VECTOR_ONLY` 或 `LEXICAL_ONLY`。融合分数只用于本次查询排序，
+不能跨查询解释成概率或置信度。
+
+`RetrievalEvaluationService` 接受最多 100 条带预期文档编号的黄金问题，复用相同检索入口计算宏平均 Recall@K、
+MRR、首个相关文档排名和逐题结果，并用调用方阈值给出 `passed` 质量门禁。Demo 的两条固定示例只能证明计算与
+回归链路，不能代表真实保险问题分布。生产环境保持 `EmbeddingService` 与 `VectorStore` 端口不变，替换企业
+Embedding + PGVector/Milvus/OpenSearch，并对版本化脱敏标注集增加 NDCG、重排、权限过滤和线上漂移监控。
 
 ## 6. 规则优先于模型
 

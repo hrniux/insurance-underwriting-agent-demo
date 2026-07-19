@@ -31,7 +31,7 @@
 | 简历职责 | Demo 代码 |
 |---|---|
 | 会话管理、任务编排、模型封装、提示词管理 | `session`、`agent`、`model`、`prompt` 包 |
-| RAG 解析、切分、向量化入库 | `KnowledgeService`、`ParagraphTextSplitter`、`HashEmbeddingService`、`VectorStore` |
+| RAG 解析、切分、混合召回与质量评测 | `KnowledgeService`、`ParagraphTextSplitter`、`HashEmbeddingService`、BM25 融合、`RetrievalEvaluationService` |
 | 模型切换、超时、重试 | `RoutingModelGateway`、`OpenAiCompatibleModelGateway` |
 | 内部接口封装为 Agent/MCP 工具 | `UnderwritingFactTools`、`ToolRegistry`、`UnderwritingMcpTools` |
 | 规则校验与可解释决策 | `UnderwritingRuleEngine`、`RuleEvaluation`、步骤/工具 Trace |
@@ -50,7 +50,9 @@
 
 ### Q2：这个 RAG 为什么不用真实 Embedding？
 
-Demo 首要目标是零外部依赖、可重复测试。Hash Embedding 能完整展示解析、切分、向量化和召回接口。生产环境会保持 `EmbeddingService` 端口，替换企业 Embedding，并用标注集评估 Recall@K、MRR 和业务命中率。
+Demo 首要目标是零外部依赖、可重复测试。Hash Embedding 能完整展示解析、切分、向量化和召回接口；词法分支用
+BM25 补足条款编号、规则代码和风险术语的精确命中，再以 65/35 融合。生产环境会保持 `EmbeddingService` 和
+`VectorStore` 端口，替换企业 Embedding 与向量库，并用版本化标注集评估 Recall@K、MRR、NDCG 和业务命中率。
 
 ### Q3：如何避免 RAG 幻觉或引用错误？
 
@@ -112,9 +114,18 @@ Demo 使用不可变 record、`ConcurrentHashMap` 和复制后返回。评估提
 
 `@Async` 只能把方法扔到另一个线程，不能自动提供任务编号、可查询状态、幂等、容量边界、失败快照和指标。本项目先保存 `PENDING`，工作线程原子推进到 `RUNNING`，最终只允许进入 `SUCCEEDED` 或 `FAILED`；执行器、队列和任务保留数都有上限，同键重试返回原任务，失败只暴露分类后的安全错误。当前仍是单实例调度器：没有持久化队列、租约、心跳、取消、补偿和跨节点抢占。生产长任务会迁移到工作流引擎或数据库任务表加消息队列，而不是简单扩大线程池。
 
+### Q18：RAG 为什么要混合检索，怎么证明优化有效？
+
+向量检索适合语义近似，但条款编号、规则代码、地址和灾害术语更依赖精确匹配；纯关键词又不擅长同义表达。因此
+Demo 同时保留余弦分数和 BM25 分数，用固定权重融合，并返回检索模式和命中词解释。质量不能靠看几个案例主观判断，
+`POST /api/v1/knowledge/evaluations` 接收黄金问题及预期文档，计算 Recall@K、MRR、逐题首个相关排名和阈值门禁。
+当前示例集很小，只证明算法和回归链路；生产必须由核保专家维护版本化、脱敏、有代表性的标注集，并补充 NDCG、
+权限过滤、重排效果、线上无结果率和人工引用反馈，不能把一次 Demo 的 `passed=true` 宣称为生产质量达标。
+
 ## 容易被追问的取舍
 
 - Hash Embedding 是演示替身，不应包装成生产语义模型。
+- 混合分数在单次候选集内归一化，只用于排序，不是概率；内置两条黄金问题也不代表真实业务质量。
 - 默认仓库是内存实现；可选 H2 Profile 能演示重启恢复，但不是生产数据库架构。
 - H2 Profile 尚未覆盖知识库、Prompt 和幂等注册表，也没有生产级迁移、跨聚合事务或多节点协调。
 - 异步任务状态和任务幂等仍在单实例内存中；进程退出时不会恢复排队/运行任务，也没有取消与自动补偿。

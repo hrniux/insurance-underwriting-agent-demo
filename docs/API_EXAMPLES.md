@@ -315,6 +315,43 @@ curl -sS -X POST "$BASE_URL/api/v1/knowledge/search" \
 ```
 
 `documentType` 可传 `PRODUCT_CLAUSE`、`UNDERWRITING_RULE`、`RISK_GUIDE` 或 `HISTORICAL_CASE`。
+响应除分块外还包含融合 `score`、`vectorScore`、`lexicalScore`、`mode` 和最多 12 个
+`matchedTerms`。`mode` 为 `HYBRID`、`VECTOR_ONLY` 或 `LEXICAL_ONLY`；分数用于本次查询排序，
+不是跨查询可比较的概率。
+
+## RAG 黄金问题集评测 `/api/v1/knowledge/evaluations`
+
+```bash
+curl -sS -X POST "$BASE_URL/api/v1/knowledge/evaluations" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "topK":4,
+    "minimumRecallAtK":1.0,
+    "minimumMeanReciprocalRank":1.0,
+    "cases":[
+      {
+        "name":"产品条款编号",
+        "query":"CLAUSE-PROPERTY-001 产品条款",
+        "expectedDocumentIds":["CLAUSE-PROPERTY-001"],
+        "documentType":"PRODUCT_CLAUSE",
+        "productCode":"PROPERTY"
+      },
+      {
+        "name":"暴雨核保规则",
+        "query":"RULE-RAIN-001 暴雨洪水核保规则",
+        "expectedDocumentIds":["RULE-RAIN-001"],
+        "documentType":"UNDERWRITING_RULE",
+        "productCode":"PROPERTY"
+      }
+    ]
+  }' | python3 -m json.tool
+```
+
+响应中的 `recallAtK` 是各问题召回率的宏平均，`meanReciprocalRank` 衡量首个相关文档的平均倒数排名；
+`passed` 只有在两项指标都达到请求阈值时才为 `true`。单次最多 100 条问题，`topK` 范围为 1–20。
+预期文档未进入 Top-K 时，对应问题的 `firstRelevantRank` 为 `null`、`reciprocalRank` 为 `0`。
+评测本身成功执行时 HTTP 返回 `200`，即使质量阈值未通过也会保留完整逐题报告；CI 或发布脚本必须检查
+`passed` 并在 `false` 时阻断发布。`scripts/demo.sh` 已实现这个非零退出门禁。
 
 ## 提示词 `/api/v1/prompts`
 
