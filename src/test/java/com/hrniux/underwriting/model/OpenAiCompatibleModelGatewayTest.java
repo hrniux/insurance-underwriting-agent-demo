@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.hrniux.underwriting.prompt.PromptSnapshot;
 import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.RiskLevel;
 import com.hrniux.underwriting.rule.RuleEvaluation;
@@ -50,6 +51,7 @@ class OpenAiCompatibleModelGatewayTest {
         assertThat(recorded.getBody().readUtf8()).contains("demo-private-model", "请分析保单");
         assertThat(response.summary()).isEqualTo("建议人工复核并补充整改材料");
         assertThat(response.provider()).isEqualTo("openai-compatible");
+        assertThat(response.prompt()).isEqualTo(request().prompt());
         assertThat(gateway.toString()).doesNotContain(SECRET);
     }
 
@@ -117,7 +119,8 @@ class OpenAiCompatibleModelGatewayTest {
 
     private ModelRequest request() {
         return new ModelRequest("请分析保单", new RuleEvaluation(
-                Decision.MANUAL_REVIEW, RiskLevel.HIGH, 70, List.of()), List.of("示例证据"), List.of());
+                Decision.MANUAL_REVIEW, RiskLevel.HIGH, 70, List.of()), List.of("示例证据"), List.of(),
+                new PromptSnapshot("underwriting-analysis", 3, "a".repeat(64)));
     }
 
     private MockResponse success(String content) {

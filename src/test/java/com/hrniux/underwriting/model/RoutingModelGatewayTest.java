@@ -30,6 +30,7 @@ class RoutingModelGatewayTest {
 
         assertThat(response.provider()).isEqualTo("mock");
         assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.prompt()).isEqualTo(request.prompt());
     }
 
     @Test

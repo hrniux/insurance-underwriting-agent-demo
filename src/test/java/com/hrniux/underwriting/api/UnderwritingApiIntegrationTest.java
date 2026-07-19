@@ -1,6 +1,7 @@
 package com.hrniux.underwriting.api;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -55,6 +56,14 @@ class UnderwritingApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.decision").value("MANUAL_REVIEW"))
                 .andExpect(jsonPath("$.evidence").isNotEmpty())
+                .andExpect(jsonPath("$.evidence[0].knowledgeVersion").value(greaterThan(0)))
+                .andExpect(jsonPath("$.evidence[0].vectorScore").isNumber())
+                .andExpect(jsonPath("$.evidence[0].lexicalScore").isNumber())
+                .andExpect(jsonPath("$.evidence[0].retrievalMode").isNotEmpty())
+                .andExpect(jsonPath("$.evidence[0].matchedTerms").isArray())
+                .andExpect(jsonPath("$.modelResponse.prompt.code").value("underwriting-analysis"))
+                .andExpect(jsonPath("$.modelResponse.prompt.version").value(greaterThan(0)))
+                .andExpect(jsonPath("$.modelResponse.prompt.templateSha256").isNotEmpty())
                 .andExpect(jsonPath("$.toolTraces.length()").value(6))
                 .andExpect(jsonPath("$.stepTraces.length()").value(7))
                 .andReturn().getResponse().getContentAsString();
@@ -86,6 +95,9 @@ class UnderwritingApiIntegrationTest {
                 .andExpect(content().string(containsString("# 财险智能核保评估报告")))
                 .andExpect(content().string(containsString("人工复核（`MANUAL_REVIEW`）")))
                 .andExpect(content().string(containsString("`RED_RAINSTORM`")))
+                .andExpect(content().string(containsString("知识版本")))
+                .andExpect(content().string(containsString("提示词版本")))
+                .andExpect(content().string(containsString("模板 SHA-256")))
                 .andExpect(content().string(containsString("本报告仅用于技术学习和面试演示")));
     }
 

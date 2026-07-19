@@ -19,11 +19,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import com.hrniux.underwriting.agent.EvaluationRepository;
+import com.hrniux.underwriting.agent.Evidence;
 import com.hrniux.underwriting.agent.JdbcEvaluationRepository;
+import com.hrniux.underwriting.model.ModelResponse;
+import com.hrniux.underwriting.rag.RetrievalMode;
 import com.hrniux.underwriting.review.HumanReviewRepository;
 import com.hrniux.underwriting.review.JdbcHumanReviewRepository;
 import com.hrniux.underwriting.session.JdbcSessionRepository;
 import com.hrniux.underwriting.session.SessionRepository;
+import com.hrniux.underwriting.shared.persistence.PersistenceJsonCodec;
 import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
@@ -47,6 +51,9 @@ class PersistentDemoProfileIntegrationTest {
     @Autowired
     private HumanReviewRepository reviews;
 
+    @Autowired
+    private PersistenceJsonCodec json;
+
     private MockMvc mvc;
 
     @BeforeEach
@@ -62,6 +69,36 @@ class PersistentDemoProfileIntegrationTest {
         assertThat(sessions).isInstanceOf(JdbcSessionRepository.class);
         assertThat(evaluations).isInstanceOf(JdbcEvaluationRepository.class);
         assertThat(reviews).isInstanceOf(JdbcHumanReviewRepository.class);
+    }
+
+    @Test
+    void readsLegacyModelAndEvidenceJsonWithoutTheNewProvenanceFields() {
+        ModelResponse model = json.read("""
+                {
+                  "summary":"历史模型摘要",
+                  "reasons":[],
+                  "recommendedActions":[],
+                  "provider":"mock",
+                  "model":"legacy-model",
+                  "attempts":1,
+                  "fallbackUsed":false
+                }
+                """, ModelResponse.class);
+        Evidence evidence = json.read("""
+                {
+                  "documentId":"DOC-LEGACY",
+                  "chunkId":"CHUNK-LEGACY",
+                  "title":"历史知识证据",
+                  "type":"RISK_GUIDE",
+                  "excerpt":"历史记录没有来源快照字段",
+                  "score":0.75
+                }
+                """, Evidence.class);
+
+        assertThat(model.prompt().available()).isFalse();
+        assertThat(evidence.knowledgeVersion()).isZero();
+        assertThat(evidence.retrievalMode()).isEqualTo(RetrievalMode.UNKNOWN);
+        assertThat(evidence.matchedTerms()).isEmpty();
     }
 
     @Test
@@ -105,7 +142,15 @@ class PersistentDemoProfileIntegrationTest {
         assertThat(sessions.findById(sessionId)).isPresent().get()
                 .extracting(session -> session.messages().size()).isEqualTo(2);
         assertThat(evaluations.findById(evaluationId)).isPresent().get()
-                .extracting(evaluation -> evaluation.policyNo()).isEqualTo("P-1001");
+                .satisfies(evaluation -> {
+                    assertThat(evaluation.policyNo()).isEqualTo("P-1001");
+                    assertThat(evaluation.modelResponse().prompt().code()).isEqualTo("underwriting-analysis");
+                    assertThat(evaluation.modelResponse().prompt().version()).isPositive();
+                    assertThat(evaluation.evidence()).allSatisfy(evidence -> {
+                        assertThat(evidence.knowledgeVersion()).isPositive();
+                        assertThat(evidence.retrievalMode()).isNotNull();
+                    });
+                });
         assertThat(reviews.findByEvaluationId(evaluationId)).isPresent().get()
                 .extracting(review -> review.reviewerId()).isEqualTo("UW-PERSISTENCE-TEST");
 

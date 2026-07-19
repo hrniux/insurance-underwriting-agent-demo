@@ -35,6 +35,7 @@ class DeterministicMockModelGatewayTest {
         assertThat(response.model()).isEqualTo("demo-underwriter-v1");
         assertThat(response.attempts()).isOne();
         assertThat(response.fallbackUsed()).isFalse();
+        assertThat(response.prompt()).isEqualTo(request.prompt());
     }
 
     @Test

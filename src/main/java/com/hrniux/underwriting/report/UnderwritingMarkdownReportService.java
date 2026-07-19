@@ -15,6 +15,7 @@ import com.hrniux.underwriting.agent.StepTrace;
 import com.hrniux.underwriting.agent.UnderwritingEvaluation;
 import com.hrniux.underwriting.model.ModelResponse;
 import com.hrniux.underwriting.rag.DocumentType;
+import com.hrniux.underwriting.rag.RetrievalMode;
 import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.RiskLevel;
 import com.hrniux.underwriting.rule.RuleResult;
@@ -162,20 +163,23 @@ public class UnderwritingMarkdownReportService {
 
     private void appendEvidence(StringBuilder report, List<Evidence> evidenceItems) {
         report.append("## 知识证据\n\n")
-                .append("| 文档类型 | 标题 | 相关度 | 摘录 | 文档编号 | 分块编号 |\n")
-                .append("|---|---|---:|---|---|---|\n");
+                .append("| 文档类型 | 标题 | 知识版本 | 综合分 | 向量分 | 词法分 | 检索解释 | 摘录 | 文档 / 分块 |\n")
+                .append("|---|---|---:|---:|---:|---:|---|---|---|\n");
         if (evidenceItems.isEmpty()) {
-            report.append("| 无 | 无 | 无 | 无 | 无 | 无 |\n\n");
+            report.append("| 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 |\n\n");
             return;
         }
         for (Evidence evidence : evidenceItems) {
             appendRow(report,
                     documentLabel(evidence.type()),
                     evidence.title(),
+                    knowledgeVersion(evidence.knowledgeVersion()),
                     percentage(evidence.score()),
+                    percentage(evidence.vectorScore()),
+                    percentage(evidence.lexicalScore()),
+                    retrievalExplanation(evidence),
                     evidence.excerpt(),
-                    code(evidence.documentId()),
-                    code(evidence.chunkId()));
+                    code(evidence.documentId()) + " / " + code(evidence.chunkId()));
         }
         report.append('\n');
     }
@@ -230,7 +234,34 @@ public class UnderwritingMarkdownReportService {
         appendRow(report, "模型", response.model());
         appendRow(report, "尝试次数", response.attempts());
         appendRow(report, "是否使用降级", response.fallbackUsed() ? "是" : "否");
+        appendRow(report, "提示词代码", code(response.prompt().code()));
+        appendRow(report, "提示词版本",
+                response.prompt().available() ? "v" + response.prompt().version() : "历史记录不可用");
+        appendRow(report, "模板 SHA-256",
+                response.prompt().available() ? code(response.prompt().templateSha256()) : "历史记录不可用");
         report.append('\n');
+    }
+
+    private String knowledgeVersion(int version) {
+        return version > 0 ? "v" + version : "历史记录不可用";
+    }
+
+    private String retrievalExplanation(Evidence evidence) {
+        String mode = retrievalModeLabel(evidence.retrievalMode());
+        if (evidence.matchedTerms().isEmpty()) {
+            return mode + "；无词法命中词";
+        }
+        return mode + "；命中：" + String.join("、", evidence.matchedTerms());
+    }
+
+    private String retrievalModeLabel(RetrievalMode mode) {
+        String chinese = switch (mode) {
+            case HYBRID -> "混合检索";
+            case VECTOR_ONLY -> "仅向量";
+            case LEXICAL_ONLY -> "仅词法";
+            case UNKNOWN -> "历史记录不可用";
+        };
+        return label(chinese, mode);
     }
 
     private void appendRow(StringBuilder report, Object... cells) {

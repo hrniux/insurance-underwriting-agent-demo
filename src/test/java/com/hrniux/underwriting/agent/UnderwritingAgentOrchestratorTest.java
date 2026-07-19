@@ -26,6 +26,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import com.hrniux.underwriting.demo.DemoScenarioRepository;
 import com.hrniux.underwriting.model.DeterministicMockModelGateway;
 import com.hrniux.underwriting.prompt.PromptTemplateService;
+import com.hrniux.underwriting.prompt.PromptSnapshot;
+import com.hrniux.underwriting.prompt.RenderedPrompt;
 import com.hrniux.underwriting.rag.DocumentChunk;
 import com.hrniux.underwriting.rag.DocumentType;
 import com.hrniux.underwriting.rag.KnowledgeService;
@@ -65,6 +67,13 @@ class UnderwritingAgentOrchestratorTest {
                 .contains(ToolName.GET_POLICY, ToolName.GET_QUOTATION, ToolName.GET_UNDERWRITING_HISTORY,
                         ToolName.GET_SURVEY_REPORT, ToolName.GET_DISASTER_RISK, ToolName.VALIDATE_RULES);
         assertThat(evaluation.evidence()).isNotEmpty();
+        assertThat(evaluation.evidence()).allSatisfy(evidence -> {
+            assertThat(evidence.knowledgeVersion()).isPositive();
+            assertThat(evidence.retrievalMode()).isNotNull();
+        });
+        assertThat(evaluation.modelResponse().prompt().code()).isEqualTo("underwriting-analysis");
+        assertThat(evaluation.modelResponse().prompt().version()).isPositive();
+        assertThat(evaluation.modelResponse().prompt().templateSha256()).matches("[0-9a-f]{64}");
         assertThat(evaluation.decision().ordinal()).isGreaterThanOrEqualTo(Decision.MANUAL_REVIEW.ordinal());
         assertThat(orchestrator.getEvaluation(evaluation.id())).isEqualTo(evaluation);
         assertThat(sessions.getSession(evaluation.sessionId()).messages())
@@ -77,7 +86,7 @@ class UnderwritingAgentOrchestratorTest {
         KnowledgeService emptyKnowledge = mock(KnowledgeService.class);
         when(emptyKnowledge.search(anyString(), anyInt(), isNull(), anyString())).thenReturn(List.of());
         PromptTemplateService prompts = mock(PromptTemplateService.class);
-        when(prompts.preview(anyString(), any(Map.class))).thenReturn("rendered prompt");
+        when(prompts.render(anyString(), any(Map.class))).thenReturn(renderedPrompt("rendered prompt"));
 
         UnderwritingAgentOrchestrator isolated = isolatedOrchestrator(
                 emptyKnowledge,
@@ -137,7 +146,8 @@ class UnderwritingAgentOrchestratorTest {
         when(reliableKnowledge.search(anyString(), anyInt(), isNull(), anyString()))
                 .thenReturn(List.of(new RetrievalHit(chunk, 0.9)));
         PromptTemplateService prompts = mock(PromptTemplateService.class);
-        when(prompts.preview(anyString(), any(Map.class))).thenReturn("rendered prompt with degradation warning");
+        when(prompts.render(anyString(), any(Map.class)))
+                .thenReturn(renderedPrompt("rendered prompt with degradation warning"));
 
         UnderwritingAgentOrchestrator isolated = isolatedOrchestrator(
                 reliableKnowledge,
@@ -189,5 +199,10 @@ class UnderwritingAgentOrchestratorTest {
                 new InMemoryEvaluationRepository(),
                 Clock.fixed(Instant.parse("2026-07-13T06:00:00Z"), ZoneOffset.UTC),
                 () -> "EVAL-" + sequence.incrementAndGet());
+    }
+
+    private RenderedPrompt renderedPrompt(String content) {
+        return new RenderedPrompt(
+                new PromptSnapshot("underwriting-analysis", 1, "b".repeat(64)), content);
     }
 }

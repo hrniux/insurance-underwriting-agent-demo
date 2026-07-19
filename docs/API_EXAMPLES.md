@@ -97,6 +97,40 @@ curl -sS -X POST "$BASE_URL/api/v1/underwriting/evaluations" \
 
 键只能使用字母、数字、点、下划线、冒号和连字符，长度 1–128。失败执行不缓存；同一个键可重试。
 
+评估响应中的关键来源快照如下。真实 SHA-256、分数和命中词取决于当前激活 Prompt 与检索结果：
+
+```json
+{
+  "evidence": [
+    {
+      "documentId": "RULE-RAIN-001",
+      "chunkId": "RULE-RAIN-001-V1-CHUNK-0",
+      "knowledgeVersion": 1,
+      "score": 0.91,
+      "vectorScore": 0.86,
+      "lexicalScore": 1.0,
+      "retrievalMode": "HYBRID",
+      "matchedTerms": ["暴雨", "红色"]
+    }
+  ],
+  "modelResponse": {
+    "provider": "mock",
+    "model": "deterministic-underwriting-mock",
+    "attempts": 1,
+    "fallbackUsed": false,
+    "prompt": {
+      "code": "underwriting-analysis",
+      "version": 1,
+      "templateSha256": "64位小写十六进制模板指纹"
+    }
+  }
+}
+```
+
+`templateSha256` 对模板正文计算，不包含渲染后注入的保单事实。完整渲染 Prompt 只传给模型网关，不写入评估响应或
+持久化 JSON。`persistent-demo` 可以读取升级前记录；旧记录缺少的 Prompt/知识来源字段会返回
+`version=0`、`UNKNOWN` 或 `unavailable`，明确表示历史来源不可用。
+
 ```bash
 curl -sS "$BASE_URL/api/v1/underwriting/evaluations/EVAL-替换为返回值" | python3 -m json.tool
 curl -sS "$BASE_URL/api/v1/underwriting/evaluations" | python3 -m json.tool

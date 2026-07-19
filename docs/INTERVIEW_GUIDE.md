@@ -16,7 +16,7 @@
 
 ### 第 2–3 分钟：展开一组规则、RAG 与轨迹
 
-进入 `P-1001`，点击“运行智能核保”，展示 70 分、四条规则、四条知识证据、七步 Agent 轨迹和六类工具调用，并说明规则结果不能被模型文本降低。随后提交一条“同意附条件承保”的人工复核，最后下载 Markdown 报告，展示 Agent 原始建议与人工最终处置如何形成可审计交付物。
+进入 `P-1001`，点击“运行智能核保”，展示 70 分、四条规则、四条知识证据、决策来源快照、七步 Agent 轨迹和六类工具调用。指出 Prompt vN/SHA-256、知识 vN、向量/词法分回答了“当时用了什么”，规则结果不能被模型文本降低。随后提交一条“同意附条件承保”的人工复核，最后下载 Markdown 报告，展示 Agent 原始建议与人工最终处置如何形成可审计交付物。
 
 ### 第 3–4 分钟：说明 REST、MCP 与模型边界
 
@@ -36,6 +36,7 @@
 | 内部接口封装为 Agent/MCP 工具 | `UnderwritingFactTools`、`ToolRegistry`、`UnderwritingMcpTools` |
 | 规则校验与可解释决策 | `UnderwritingRuleEngine`、`RuleEvaluation`、步骤/工具 Trace |
 | 可审计中文结果交付 | `UnderwritingMarkdownReportService`、`GET /api/v1/underwriting/evaluations/{evaluationId}/report` |
+| Prompt 与知识来源追溯 | `RenderedPrompt`、`PromptSnapshot`、增强 `Evidence`、演示台“决策来源快照” |
 | 幂等、并发单飞与运行指标 | `EvaluationSubmissionService`、`Idempotency-Key`、Actuator Metrics |
 | 内部系统故障分级与安全降级 | `ToolCriticality`、`ToolAttempt`、`DegradationNotice`、`degraded-demo` Profile |
 | 人工复核与 Agent 效果反馈闭环 | `HumanReviewService`、`HumanReviewRepository`、Review API、人工复核指标 |
@@ -130,11 +131,20 @@ Demo 同时保留余弦分数和 BM25 分数，用固定权重融合，并返回
 审批人、RBAC、双人复核、生效日期和数据库事务；生产会把版本和审批保存在 PostgreSQL，通过 Outbox/索引任务及
 索引别名切换解决数据库与向量库一致性，不能把单实例 `synchronized` 当成分布式发布事务。
 
+### Q20：如何证明一次核保建议使用了哪版 Prompt 和哪版知识？
+
+Prompt 渲染不是先取字符串、事后再查版本，而是一次读取激活模板，同时返回渲染内容与 `PromptSnapshot`，其中保存
+代码、版本和模板正文 SHA-256。模型网关把这份快照原样写进 `ModelResponse`；完整渲染 Prompt 不落库，避免为了
+审计扩大敏感业务事实的保存范围。每条证据继续保存知识版本、document/chunk ID、融合/向量/词法分、检索模式和
+命中词，所以能从评估结果回到具体 Prompt vN 和知识 vN。SHA-256 只是内容指纹，不是防篡改签名；生产还需要
+只追加审计日志、操作者身份、审批链、规则版本、可信时间戳和签名校验。旧 JSON 没有这些字段时明确标记“历史记录不可用”。
+
 ## 容易被追问的取舍
 
 - Hash Embedding 是演示替身，不应包装成生产语义模型。
 - 混合分数在单次候选集内归一化，只用于排序，不是概率；内置两条黄金问题也不代表真实业务质量。
 - 知识版本状态机和原子索引替换是真实实现，但版本仍在内存中，也没有审批身份、RBAC、生效日期或跨系统事务。
+- Prompt/知识来源快照能定位版本和内容指纹，但不是数字签名，也没有只追加审计库、审批身份或规则集版本快照。
 - 默认仓库是内存实现；可选 H2 Profile 能演示重启恢复，但不是生产数据库架构。
 - H2 Profile 尚未覆盖知识库、Prompt 和幂等注册表，也没有生产级迁移、跨聚合事务或多节点协调。
 - 异步任务状态和任务幂等仍在单实例内存中；进程退出时不会恢复排队/运行任务，也没有取消与自动补偿。

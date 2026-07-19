@@ -86,6 +86,20 @@ flowchart LR
 
 `runStep` 统一测量耗时并写入 `StepTrace`。`ToolRegistry` 同样为每个工具写入脱敏 `ToolCallTrace`，因此可以区分“流程慢”还是“某个内部系统慢”。
 
+### 4.1 决策来源快照
+
+`PromptTemplateService.render` 只读取一次当前激活模板，并在同一个返回值中携带渲染内容和 `PromptSnapshot`：模板代码、
+版本、模板正文 SHA-256。编排器把渲染内容交给 `ModelGateway`，但只把不含保单事实的快照随 `ModelResponse` 保存。
+这样不会出现“先渲染 v1、记录时却读到刚激活的 v2”的竞态，也不会为了审计长期保存完整模型输入中的业务事实。
+
+RAG 命中转换为评估 `Evidence` 时不再丢弃检索解释，而是保留 `knowledgeVersion`、document/chunk ID、综合分、
+`vectorScore`、`lexicalScore`、`RetrievalMode` 和 `matchedTerms`。报告与演示台可以把一次结论追溯到实际 Prompt 版本、
+模型路由和具体知识版本。新增字段用可缺省类型兼容旧聚合 JSON；缺失来源归一化为 `version=0`、`UNKNOWN` 和
+`unavailable`，明确承认历史证据不足，而不是编造来源。
+
+模板 SHA-256 是内容指纹，用于定位配置和发现意外变化，不是数字签名，也不能单独证明数据库未被篡改。生产环境还要
+把 Prompt、规则和知识发布事件写入只追加审计存储，并结合操作者身份、审批记录、时间戳签名和留存策略。
+
 ## 5. RAG 流程
 
 外部知识先进入版本化发布状态机，只有 `PUBLISHED` 版本能写入检索索引：

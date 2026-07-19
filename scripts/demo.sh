@@ -35,6 +35,25 @@ evaluate_scenario() {
     -d "{\"policyNo\":\"$policy_no\",\"question\":\"$question\"}" \
     >"$output_file"
   python3 -m json.tool "$output_file"
+  python3 - "$output_file" <<'PY'
+import json, re, sys
+evaluation = json.load(open(sys.argv[1]))
+prompt = evaluation["modelResponse"]["prompt"]
+evidence = evaluation["evidence"]
+if prompt["code"] != "underwriting-analysis" or prompt["version"] < 1:
+    raise SystemExit(f"Prompt 来源快照错误：{prompt}")
+if not re.fullmatch(r"[0-9a-f]{64}", prompt["templateSha256"]):
+    raise SystemExit("Prompt 模板 SHA-256 格式错误")
+if not evidence or any(item["knowledgeVersion"] < 1 for item in evidence):
+    raise SystemExit("知识证据缺少已发布版本引用")
+required = {"vectorScore", "lexicalScore", "retrievalMode", "matchedTerms"}
+if any(not required.issubset(item) for item in evidence):
+    raise SystemExit("知识证据缺少混合检索解释")
+print(
+    f"来源快照验证通过：Prompt v{prompt['version']}，"
+    f"知识版本引用 {len(evidence)} 条"
+)
+PY
 }
 
 echo "[1/10] 服务健康检查"

@@ -1,6 +1,10 @@
 package com.hrniux.underwriting.prompt;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +88,10 @@ public class PromptTemplateService {
     }
 
     public String preview(String code, Map<String, ?> variables) {
+        return render(code, variables).content();
+    }
+
+    public RenderedPrompt render(String code, Map<String, ?> variables) {
         PromptTemplateVersion template = active(code);
         Map<String, ?> supplied = Map.copyOf(Objects.requireNonNull(variables, "variables must not be null"));
         Set<String> missing = new LinkedHashSet<>(template.requiredVariables());
@@ -99,7 +107,19 @@ public class PromptTemplateService {
             matcher.appendReplacement(rendered, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(rendered);
-        return rendered.toString();
+        return new RenderedPrompt(
+                new PromptSnapshot(template.code(), template.version(), sha256(template.body())),
+                rendered.toString());
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        }
+        catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("SHA-256 is not available", error);
+        }
     }
 
     private Set<String> placeholders(String body) {

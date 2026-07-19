@@ -57,7 +57,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                         "openai-compatible",
                         model,
                         attempt,
-                        false);
+                        false,
+                        request.prompt());
             }
             catch (RestClientResponseException error) {
                 if (isRetryable(error.getStatusCode().value()) && attempt < maxAttempts) {

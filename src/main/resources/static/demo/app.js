@@ -68,6 +68,12 @@ const LABELS = {
     RISK_GUIDE: "风险指引",
     HISTORICAL_CASE: "历史案例"
   },
+  retrievalModes: {
+    HYBRID: "混合检索",
+    VECTOR_ONLY: "仅向量",
+    LEXICAL_ONLY: "仅词法",
+    UNKNOWN: "历史记录不可用"
+  },
   steps: {
     QUESTION_UNDERSTANDING: "理解核保问题",
     BUSINESS_DATA_COLLECTION: "采集五类业务事实",
@@ -365,16 +371,70 @@ function renderEvidence(items) {
   const cards = items.length ? items.map(item => {
     const card = el("article", "result-card");
     const relevance = Math.round(clampScore(Number(item.score) * 100));
+    const vectorScore = Math.round(clampScore(Number(item.vectorScore) * 100));
+    const lexicalScore = Math.round(clampScore(Number(item.lexicalScore) * 100));
+    const version = Number(item.knowledgeVersion) > 0 ? `v${item.knowledgeVersion}` : "版本未知";
+    const matchedTerms = Array.isArray(item.matchedTerms) && item.matchedTerms.length
+      ? item.matchedTerms.join("、")
+      : "无词法命中词";
     card.append(
-      el("p", "result-card__meta", `${label("documents", item.type)} · 相关度 ${relevance}%`),
+      el(
+        "p",
+        "result-card__meta",
+        `${label("documents", item.type)} · ${version} · ${label("retrievalModes", item.retrievalMode)}`
+      ),
       el("h4", null, item.title),
-      el("p", null, item.excerpt)
+      el("p", null, item.excerpt),
+      el("p", "result-card__meta", `综合 ${relevance}% · 向量 ${vectorScore}% · 词法 ${lexicalScore}%`),
+      el("p", "result-card__meta", `命中词：${matchedTerms}`)
     );
     return card;
   }) : [el("p", "empty-state", "本场景没有返回知识证据。")];
   grid.append(...cards);
   section.append(el("h3", null, "知识证据"), grid);
   setChildren(find("#evidence-list"), [section]);
+}
+
+function renderSourceSnapshot(modelResponse, evidenceItems) {
+  const section = el("section", "result-section");
+  const grid = el("div", "trace-grid");
+  const prompt = modelResponse?.prompt;
+  const promptVersion = Number(prompt?.version) > 0 ? `v${prompt.version}` : "历史记录不可用";
+  const fingerprint = prompt?.templateSha256 && prompt.templateSha256 !== "unavailable"
+    ? `${prompt.templateSha256.slice(0, 16)}…`
+    : "历史记录不可用";
+  const knowledgeVersions = [...new Set(evidenceItems.map(item =>
+    `${text(item.documentId)}@${Number(item.knowledgeVersion) > 0 ? `v${item.knowledgeVersion}` : "未知版本"}`
+  ))];
+
+  const promptCard = el("article", "trace-card");
+  promptCard.append(
+    el("h4", null, "Prompt 快照"),
+    el("p", null, `模板：${text(prompt?.code, "历史记录不可用")} ${promptVersion}`),
+    el("p", "result-card__meta", `SHA-256：${fingerprint}`)
+  );
+
+  const modelCard = el("article", "trace-card");
+  modelCard.append(
+    el("h4", null, "模型路由"),
+    el("p", null, `${text(modelResponse?.provider)} / ${text(modelResponse?.model)}`),
+    el(
+      "p",
+      "result-card__meta",
+      `尝试 ${text(modelResponse?.attempts, "0")} 次 · ${modelResponse?.fallbackUsed ? "已显式降级" : "未降级"}`
+    )
+  );
+
+  const knowledgeCard = el("article", "trace-card");
+  knowledgeCard.append(
+    el("h4", null, "知识版本引用"),
+    el("p", null, knowledgeVersions.length ? knowledgeVersions.join("；") : "本次没有知识证据"),
+    el("p", "result-card__meta", `${knowledgeVersions.length} 个文档版本`)
+  );
+
+  grid.append(promptCard, modelCard, knowledgeCard);
+  section.append(el("h3", null, "决策来源快照"), grid);
+  setChildren(find("#source-snapshot"), [section]);
 }
 
 function renderStepTraces(items) {
@@ -527,7 +587,9 @@ function renderEvaluation(evaluation, expected) {
   renderTextList("reason-list", "核保原因", evaluation.reasons);
   renderTextList("action-list", "建议动作", evaluation.recommendedActions);
   renderRuleHits(Array.isArray(evaluation.ruleHits) ? evaluation.ruleHits : []);
-  renderEvidence(Array.isArray(evaluation.evidence) ? evaluation.evidence : []);
+  const evidence = Array.isArray(evaluation.evidence) ? evaluation.evidence : [];
+  renderSourceSnapshot(evaluation.modelResponse, evidence);
+  renderEvidence(evidence);
   renderStepTraces(Array.isArray(evaluation.stepTraces) ? evaluation.stepTraces : []);
   renderToolTraces(Array.isArray(evaluation.toolTraces) ? evaluation.toolTraces : []);
   renderHumanReviewPanel(evaluation);

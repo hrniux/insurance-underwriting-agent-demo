@@ -60,6 +60,24 @@ class PromptTemplateServiceTest {
     }
 
     @Test
+    void returnsTheExactActiveVersionAndStableTemplateFingerprintWithTheRenderedPrompt() {
+        service.createVersion(
+                "underwriting-analysis",
+                "问题：{{question}}",
+                Set.of("question"));
+
+        RenderedPrompt rendered = service.render(
+                "underwriting-analysis", Map.of("question", "是否承保"));
+
+        assertThat(rendered.content()).isEqualTo("问题：是否承保");
+        assertThat(rendered.snapshot().code()).isEqualTo("underwriting-analysis");
+        assertThat(rendered.snapshot().version()).isOne();
+        assertThat(rendered.snapshot().templateSha256()).matches("[0-9a-f]{64}");
+        assertThat(service.render("underwriting-analysis", Map.of("question", "换一个问题"))
+                .snapshot()).isEqualTo(rendered.snapshot());
+    }
+
+    @Test
     void rejectsMissingVariables() {
         service.createVersion(
                 "underwriting-analysis",
@@ -88,5 +106,12 @@ class PromptTemplateServiceTest {
 
         assertThatThrownBy(() -> service.versions("underwriting-analysis").clear())
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void rejectsAnInvalidPublishedTemplateFingerprint() {
+        assertThatThrownBy(() -> new PromptSnapshot("underwriting-analysis", 1, "not-a-sha256"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("SHA-256");
     }
 }

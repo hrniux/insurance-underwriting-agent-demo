@@ -15,7 +15,9 @@ import com.hrniux.underwriting.agent.StepStatus;
 import com.hrniux.underwriting.agent.StepTrace;
 import com.hrniux.underwriting.agent.UnderwritingEvaluation;
 import com.hrniux.underwriting.model.ModelResponse;
+import com.hrniux.underwriting.prompt.PromptSnapshot;
 import com.hrniux.underwriting.rag.DocumentType;
+import com.hrniux.underwriting.rag.RetrievalMode;
 import com.hrniux.underwriting.rule.Decision;
 import com.hrniux.underwriting.rule.RiskLevel;
 import com.hrniux.underwriting.rule.RuleResult;
@@ -75,6 +77,16 @@ class UnderwritingMarkdownReportServiceTest {
                 "整改证明已核验 \\| 同意附条件承保",
                 "- 提高免赔额",
                 "- 季度复查");
+        assertThat(report).contains(
+                "知识版本",
+                "v2",
+                "86%",
+                "混合检索（`HYBRID`）",
+                "命中：暴雨、整改",
+                "提示词版本",
+                "v3",
+                "模板 SHA-256",
+                "`" + "a".repeat(64) + "`");
     }
 
     @Test
@@ -114,7 +126,12 @@ class UnderwritingMarkdownReportServiceTest {
                         "暴雨风险指引",
                         DocumentType.RISK_GUIDE,
                         "第一行 | <script>\n第二行",
-                        0.86)),
+                        0.86,
+                        2,
+                        0.80,
+                        0.92,
+                        RetrievalMode.HYBRID,
+                        List.of("暴雨", "整改"))),
                 List.of(new RuleResult(
                         "RED_RAINSTORM",
                         "暴雨红色预警触发人工复核",
@@ -143,7 +160,8 @@ class UnderwritingMarkdownReportServiceTest {
                         "mock",
                         "deterministic-underwriting-mock",
                         1,
-                        false),
+                        false,
+                        new PromptSnapshot("underwriting-analysis", 3, "a".repeat(64))),
                 timestamp);
     }
 

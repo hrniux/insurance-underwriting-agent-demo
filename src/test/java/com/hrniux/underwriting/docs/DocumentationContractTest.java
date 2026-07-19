@@ -351,6 +351,36 @@ class DocumentationContractTest {
                 "知识版本生命周期演示完成");
     }
 
+    @Test
+    void documentsThePromptAndKnowledgeDecisionProvenanceSnapshot() throws IOException {
+        assertThat(read("README.md")).contains(
+                "决策来源快照",
+                "PromptSnapshot",
+                "模板 SHA-256",
+                "历史记录不可用");
+        assertThat(read("docs/ARCHITECTURE.md")).contains(
+                "PromptTemplateService.render",
+                "knowledgeVersion",
+                "vectorScore",
+                "matchedTerms",
+                "不是数字签名");
+        assertThat(read("docs/API_EXAMPLES.md")).contains(
+                "templateSha256",
+                "retrievalMode",
+                "完整渲染 Prompt 只传给模型网关");
+        assertThat(read("docs/INTERVIEW_GUIDE.md")).contains(
+                "### Q20",
+                "哪版 Prompt 和哪版知识",
+                "只追加审计日志");
+        assertThat(read("docs/DEMO_DATA_GUIDE.md")).contains(
+                "Prompt 版本/指纹",
+                "向量/词法分");
+        assertThat(read("scripts/demo.sh")).contains(
+                "来源快照验证通过",
+                "templateSha256",
+                "knowledgeVersion");
+    }
+
     private String read(String path) throws IOException {
         return Files.readString(ROOT.resolve(path));
     }

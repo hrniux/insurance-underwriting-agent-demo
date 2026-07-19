@@ -32,7 +32,7 @@ public class DeterministicMockModelGateway implements ModelGateway {
                 request.warnings().stream()).toList();
         List<String> actions = actionsFor(
                 request.ruleEvaluation().decision(), request.evidence().isEmpty(), request.warnings());
-        return new ModelResponse(summary, reasons, actions, "mock", model, 1, false);
+        return new ModelResponse(summary, reasons, actions, "mock", model, 1, false, request.prompt());
     }
 
     private List<String> actionsFor(Decision decision, boolean evidenceMissing, List<String> warnings) {

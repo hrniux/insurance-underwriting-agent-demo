@@ -20,6 +20,7 @@ import com.hrniux.underwriting.model.ModelRequest;
 import com.hrniux.underwriting.model.ModelResponse;
 import com.hrniux.underwriting.model.ModelUnavailableException;
 import com.hrniux.underwriting.prompt.PromptTemplateService;
+import com.hrniux.underwriting.prompt.RenderedPrompt;
 import com.hrniux.underwriting.rag.KnowledgeService;
 import com.hrniux.underwriting.rag.RetrievalHit;
 import com.hrniux.underwriting.rule.Decision;
@@ -124,10 +125,12 @@ public class UnderwritingAgentOrchestrator {
         });
 
         ModelResponse modelResponse = runStep(AgentStep.RECOMMENDATION_GENERATION, () -> {
-            String rendered = prompts.preview(PROMPT_CODE, promptVariables(request, facts, ruleEvaluation, evidence));
-            return models.generate(new ModelRequest(rendered, ruleEvaluation,
+            RenderedPrompt rendered = prompts.render(
+                    PROMPT_CODE, promptVariables(request, facts, ruleEvaluation, evidence));
+            return models.generate(new ModelRequest(rendered.content(), ruleEvaluation,
                     evidence.stream().map(Evidence::excerpt).toList(),
-                    facts.degradations().stream().map(DegradationNotice::message).toList()));
+                    facts.degradations().stream().map(DegradationNotice::message).toList(),
+                    rendered.snapshot()));
         });
 
         Instant createdAt = clock.instant();
@@ -208,8 +211,31 @@ public class UnderwritingAgentOrchestrator {
     private Evidence toEvidence(RetrievalHit hit) {
         String content = hit.chunk().content();
         String excerpt = content.length() <= 240 ? content : content.substring(0, 240) + "…";
-        return new Evidence(hit.chunk().documentId(), hit.chunk().id(), hit.chunk().title(), hit.chunk().type(),
-                excerpt, hit.score());
+        return new Evidence(
+                hit.chunk().documentId(),
+                hit.chunk().id(),
+                hit.chunk().title(),
+                hit.chunk().type(),
+                excerpt,
+                hit.score(),
+                knowledgeVersion(hit),
+                hit.vectorScore(),
+                hit.lexicalScore(),
+                hit.mode(),
+                hit.matchedTerms());
+    }
+
+    private int knowledgeVersion(RetrievalHit hit) {
+        String rawVersion = hit.chunk().metadata().get("knowledgeVersion");
+        if (rawVersion == null) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(rawVersion));
+        }
+        catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private RuleEvaluation applySafetyFloors(
